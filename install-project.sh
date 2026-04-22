@@ -1,18 +1,14 @@
 #!/usr/bin/env bash
 # install-project.sh — interactive, per-project installer.
 #
-# Takes a target path, detects the stack (from package.json + marker files),
-# preselects relevant skills, lets you toggle, then installs to <target>/.claude/skills/.
+# Installs any combination of:
+#   - skills    -> <target>/.claude/skills/<name>/
+#   - agents    -> <target>/.claude/agents/<name>.md
+#   - settings  -> <target>/.claude/settings.json
+#                  (enables agent teams + auto memory; skipped if file exists)
 #
-# Usage:
-#   ./install-project.sh                           prompt for target, then interactive menu
-#   ./install-project.sh <path>                    target <path>, interactive menu
-#   ./install-project.sh <path> --yes              accept detected selection, no menu
-#   ./install-project.sh <path> --all              install every skill, no menu
-#   ./install-project.sh <path> --skill=<name>...  force-include specific skills
-#   ./install-project.sh <path> --copy             copy instead of symlink
-#   ./install-project.sh <path> --no-suggest       start with nothing selected
-#   ./install-project.sh --help
+# Reads the target's package.json and root-level marker files to preselect
+# relevant entries. The menu lets you toggle anything before installing.
 
 set -euo pipefail
 
@@ -22,17 +18,25 @@ Usage: install-project.sh [<target-path>] [flags]
 
 Flags:
   --yes, -y            accept detected selection without showing the menu
-  --all                select every skill, skip the menu
+  --all                select every skill and agent, skip the menu
   --skill=<name>       force-include a skill (repeatable)
+  --agent=<name>       force-include an agent (repeatable)
+  --with-settings      force-include the recommended .claude/settings.json
   --no-suggest         start with nothing preselected
   --copy               copy files instead of symlinking
   --help, -h           this help
 
 Stack detection (from <target>/package.json and marker files):
-  fastify, @trpc/server, @neolinkrnd/fastify-bundle-*  -> backend skills
-  @angular/core, @nx/angular                            -> frontend skills
-  zod                                                   -> shared/zod-schema
-  Dockerfile OR @neolinkrnd/* deps                      -> devops/argocd-k8s-deploy
+  fastify, @fastify/autoload, fastify-plugin           -> backend skills + backend-implementer
+  @neolinkrnd/fastify-bundle-*                          -> backend skills + backend-implementer
+  @angular/core OR angular.json, @nx/angular            -> frontend skills + frontend-implementer
+  zod, @sinclair/typemap                                -> zod-schema, schema-owner (full-stack only)
+  Dockerfile | docker-compose.* | Chart.yaml | k8s/ ... -> argocd-k8s-deploy + deploy-captain
+  cross-layer (backend AND frontend signals)            -> schema-owner, agent-teams skill
+
+Settings fragment (opt-in via --with-settings or interactive toggle) writes:
+  { "env": { "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1" }, "autoMemoryEnabled": true }
+  to <target>/.claude/settings.json (skipped if the file already exists).
 
 Interactive menu commands:
   1 3 5      toggle entries 1, 3, 5
@@ -49,17 +53,21 @@ MODE="symlink"
 FORCE_YES=0
 FORCE_ALL=0
 NO_SUGGEST=0
+FORCE_SETTINGS=0
 FORCE_SKILLS=()
+FORCE_AGENTS=()
 
 for arg in "$@"; do
   case "$arg" in
-    -h|--help)     usage; exit 0 ;;
-    --copy)        MODE="copy" ;;
-    -y|--yes)      FORCE_YES=1 ;;
-    --all)         FORCE_ALL=1 ;;
-    --no-suggest)  NO_SUGGEST=1 ;;
-    --skill=*)     FORCE_SKILLS+=("${arg#--skill=}") ;;
-    -*)            echo "install-project.sh: unknown flag '$arg'" >&2; usage >&2; exit 1 ;;
+    -h|--help)        usage; exit 0 ;;
+    --copy)           MODE="copy" ;;
+    -y|--yes)         FORCE_YES=1 ;;
+    --all)            FORCE_ALL=1 ;;
+    --no-suggest)     NO_SUGGEST=1 ;;
+    --with-settings)  FORCE_SETTINGS=1 ;;
+    --skill=*)        FORCE_SKILLS+=("${arg#--skill=}") ;;
+    --agent=*)        FORCE_AGENTS+=("${arg#--agent=}") ;;
+    -*)               echo "install-project.sh: unknown flag '$arg'" >&2; usage >&2; exit 1 ;;
     *)
       if [ -n "$TARGET_PATH" ]; then
         echo "install-project.sh: multiple target paths given ('$TARGET_PATH', '$arg')" >&2
@@ -84,12 +92,17 @@ if [ ! -d "$TARGET_PATH" ]; then
 fi
 TARGET_PATH="$(cd "$TARGET_PATH" && pwd)"
 
-# --- discover skills ----------------------------------------------------------
+# --- discover entries ---------------------------------------------------------
+# Parallel arrays. Each entry has a KIND: "skill" | "agent" | "settings".
 
-SKILL_NAMES=()
-SKILL_PATHS=()
-SKILL_CATEGORIES=()
+ENTRY_KIND=()
+ENTRY_NAME=()
+ENTRY_SRC=()
+ENTRY_CATEGORY=()
+ENTRY_SELECTED=()
+ENTRY_DETECTED=()
 
+# Skills: directories containing SKILL.md
 while IFS= read -r skill_md; do
   [ -z "$skill_md" ] && continue
   dir="$(dirname "$skill_md")"
@@ -97,61 +110,71 @@ while IFS= read -r skill_md; do
   cat_dir="$(dirname "$dir")"
   category="$(basename "$cat_dir")"
   [ "$category" = "skills" ] && category="misc"
-  SKILL_NAMES+=("$name")
-  SKILL_PATHS+=("$dir")
-  SKILL_CATEGORIES+=("$category")
+  ENTRY_KIND+=("skill")
+  ENTRY_NAME+=("$name")
+  ENTRY_SRC+=("$dir")
+  ENTRY_CATEGORY+=("$category")
+  ENTRY_SELECTED+=(0)
+  ENTRY_DETECTED+=("")
 done <<EOF
 $(find "$SOURCE_DIR/skills" -type f -name SKILL.md 2>/dev/null | sort)
 EOF
 
-N=${#SKILL_NAMES[@]}
+# Agents: *.md under agents/ (excluding README.md)
+while IFS= read -r agent_md; do
+  [ -z "$agent_md" ] && continue
+  name="$(basename "$agent_md" .md)"
+  cat_dir="$(dirname "$agent_md")"
+  category="$(basename "$cat_dir")"
+  [ "$category" = "agents" ] && category="misc"
+  ENTRY_KIND+=("agent")
+  ENTRY_NAME+=("$name")
+  ENTRY_SRC+=("$agent_md")
+  ENTRY_CATEGORY+=("$category")
+  ENTRY_SELECTED+=(0)
+  ENTRY_DETECTED+=("")
+done <<EOF
+$(find "$SOURCE_DIR/agents" -type f -name "*.md" ! -iname "README.md" 2>/dev/null | sort)
+EOF
+
+# Settings pseudo-entry (always last)
+ENTRY_KIND+=("settings")
+ENTRY_NAME+=("enable agent teams + auto memory")
+ENTRY_SRC+=("$SOURCE_DIR/settings/recommended.json")
+ENTRY_CATEGORY+=("project-settings")
+ENTRY_SELECTED+=(0)
+ENTRY_DETECTED+=("")
+
+N=${#ENTRY_NAME[@]}
 if [ "$N" -eq 0 ]; then
-  echo "install-project.sh: no skills found under $SOURCE_DIR/skills" >&2
+  echo "install-project.sh: no entries discovered under $SOURCE_DIR" >&2
   exit 1
 fi
 
-SELECTED=()
-DETECTED=()
-for i in $(seq 0 $((N - 1))); do
-  SELECTED[$i]=0
-  DETECTED[$i]=""
-done
-
 # --- stack detection ----------------------------------------------------------
+# All reads are scoped to $TARGET_PATH. Never this repo, never $HOME.
 
 PKG_JSON="$TARGET_PATH/package.json"
 
 have_dep_literal() {
-  # literal dependency name match in package.json
   [ -f "$PKG_JSON" ] || return 1
   grep -q "\"$1\"[[:space:]]*:" "$PKG_JSON"
 }
-
 have_dep_prefix() {
-  # any dep key starting with prefix $1 (e.g. '@neolinkrnd/', '@nx/')
   [ -f "$PKG_JSON" ] || return 1
   grep -q "\"$1" "$PKG_JSON"
 }
-
 has_file() {
-  # one or more paths relative to TARGET_PATH; returns 0 if any exists as file
   local p
-  for p in "$@"; do
-    [ -f "$TARGET_PATH/$p" ] && return 0
-  done
+  for p in "$@"; do [ -f "$TARGET_PATH/$p" ] && return 0; done
   return 1
 }
-
 has_dir() {
   local p
-  for p in "$@"; do
-    [ -d "$TARGET_PATH/$p" ] && return 0
-  done
+  for p in "$@"; do [ -d "$TARGET_PATH/$p" ] && return 0; done
   return 1
 }
-
 has_file_glob() {
-  # shallow glob match at the target root (no recursion — keeps it fast)
   local g match
   for g in "$@"; do
     for match in "$TARGET_PATH"/$g; do
@@ -161,112 +184,147 @@ has_file_glob() {
   return 1
 }
 
-flag_skill() {
-  # $1 = skill name, $2 = reason to display
-  local skill="$1" reason="$2" i
+flag_entry() {
+  # $1 = kind, $2 = name, $3 = reason
+  local kind="$1" name="$2" reason="$3" i
   for i in $(seq 0 $((N - 1))); do
-    if [ "${SKILL_NAMES[$i]}" = "$skill" ]; then
-      SELECTED[$i]=1
-      if [ -z "${DETECTED[$i]}" ]; then
-        DETECTED[$i]="$reason"
+    if [ "${ENTRY_KIND[$i]}" = "$kind" ] && [ "${ENTRY_NAME[$i]}" = "$name" ]; then
+      ENTRY_SELECTED[$i]=1
+      if [ -z "${ENTRY_DETECTED[$i]}" ]; then
+        ENTRY_DETECTED[$i]="$reason"
       else
-        case ",${DETECTED[$i]}," in
+        case ",${ENTRY_DETECTED[$i]}," in
           *",$reason,"*) : ;;
-          *) DETECTED[$i]="${DETECTED[$i]}, $reason" ;;
+          *) ENTRY_DETECTED[$i]="${ENTRY_DETECTED[$i]}, $reason" ;;
         esac
       fi
       return 0
     fi
   done
+  return 0
 }
 
 if [ "$NO_SUGGEST" -eq 0 ] && [ "$FORCE_ALL" -eq 0 ]; then
-  # All checks read from $TARGET_PATH only (package.json, root-level marker files/dirs).
-  # Each call to flag_skill adds one specific signal as a reason — multiple signals
-  # surface in the menu as "# detected: a, b, c".
-
-  # ---- Backend: Fastify + tRPC -----------------------------------------------
-  # Gate on fastify itself or the house bundle prefix. @trpc/server alone is NOT
-  # enough — frontend monorepos import it for AppRouter type inference.
+  # ---- Backend: Fastify + tRPC ---------------------------------------------
   IS_BACKEND=0
   if have_dep_literal "fastify"; then
     IS_BACKEND=1
-    flag_skill "fastify-trpc-service" "fastify"
-    flag_skill "fastify-plugin"       "fastify"
+    flag_entry "skill" "fastify-trpc-service" "fastify"
+    flag_entry "skill" "fastify-plugin"       "fastify"
   fi
   if have_dep_literal "@fastify/autoload"; then
     IS_BACKEND=1
-    flag_skill "fastify-trpc-service" "@fastify/autoload"
+    flag_entry "skill" "fastify-trpc-service" "@fastify/autoload"
   fi
   if have_dep_literal "fastify-plugin"; then
     IS_BACKEND=1
-    flag_skill "fastify-plugin" "fastify-plugin dep"
+    flag_entry "skill" "fastify-plugin" "fastify-plugin dep"
   fi
   if have_dep_prefix "@neolinkrnd/fastify-bundle"; then
     IS_BACKEND=1
-    flag_skill "fastify-trpc-service" "@neolinkrnd/fastify-bundle-*"
-    flag_skill "fastify-plugin"       "@neolinkrnd/fastify-bundle-*"
+    flag_entry "skill" "fastify-trpc-service" "@neolinkrnd/fastify-bundle-*"
+    flag_entry "skill" "fastify-plugin"       "@neolinkrnd/fastify-bundle-*"
   fi
   if [ "$IS_BACKEND" -eq 1 ]; then
-    have_dep_literal "@trpc/server"      && flag_skill "fastify-trpc-service" "@trpc/server"
-    have_dep_literal "@sinclair/typemap" && flag_skill "fastify-trpc-service" "@sinclair/typemap"
-    have_dep_literal "@nx/node"          && flag_skill "fastify-trpc-service" "@nx/node"
+    have_dep_literal "@trpc/server"      && flag_entry "skill" "fastify-trpc-service" "@trpc/server"
+    have_dep_literal "@sinclair/typemap" && flag_entry "skill" "fastify-trpc-service" "@sinclair/typemap"
+    have_dep_literal "@nx/node"          && flag_entry "skill" "fastify-trpc-service" "@nx/node"
+    flag_entry "agent" "backend-implementer" "backend detected"
   fi
 
-  # ---- Frontend: Angular 19 --------------------------------------------------
+  # ---- Frontend: Angular 19 ------------------------------------------------
   IS_FRONTEND=0
   if have_dep_literal "@angular/core" || has_file "angular.json"; then
     IS_FRONTEND=1
-    flag_skill "angular-19-component" "@angular/core"
-    flag_skill "nx-angular-library"   "@angular/core"
+    flag_entry "skill" "angular-19-component" "@angular/core"
+    flag_entry "skill" "nx-angular-library"   "@angular/core"
   fi
   if have_dep_literal "@nx/angular"; then
     IS_FRONTEND=1
-    flag_skill "nx-angular-library" "@nx/angular"
+    flag_entry "skill" "nx-angular-library" "@nx/angular"
   fi
   if [ "$IS_FRONTEND" -eq 1 ]; then
-    have_dep_literal "@angular/material"         && flag_skill "angular-19-component" "@angular/material"
-    have_dep_literal "tailwindcss"               && flag_skill "angular-19-component" "tailwindcss"
-    has_file_glob "tailwind.config.*"            && flag_skill "angular-19-component" "tailwind.config"
-    have_dep_literal "@analogjs/vitest-angular"  && flag_skill "angular-19-component" "@analogjs/vitest-angular"
-    has_file_glob "vitest.config.*"              && flag_skill "angular-19-component" "vitest.config"
-    has_file_glob "playwright.config.*"          && flag_skill "angular-19-component" "playwright.config"
+    have_dep_literal "@angular/material"         && flag_entry "skill" "angular-19-component" "@angular/material"
+    have_dep_literal "tailwindcss"               && flag_entry "skill" "angular-19-component" "tailwindcss"
+    has_file_glob "tailwind.config.*"            && flag_entry "skill" "angular-19-component" "tailwind.config"
+    have_dep_literal "@analogjs/vitest-angular"  && flag_entry "skill" "angular-19-component" "@analogjs/vitest-angular"
+    has_file_glob "vitest.config.*"              && flag_entry "skill" "angular-19-component" "vitest.config"
+    has_file_glob "playwright.config.*"          && flag_entry "skill" "angular-19-component" "playwright.config"
+    flag_entry "agent" "frontend-implementer" "frontend detected"
   fi
 
-  # ---- Shared: Zod -----------------------------------------------------------
-  if have_dep_literal "zod"; then flag_skill "zod-schema" "zod"; fi
-  if have_dep_literal "@sinclair/typemap"; then flag_skill "zod-schema" "@sinclair/typemap"; fi
+  # ---- Shared: Zod ---------------------------------------------------------
+  if have_dep_literal "zod";              then flag_entry "skill" "zod-schema" "zod"; fi
+  if have_dep_literal "@sinclair/typemap"; then flag_entry "skill" "zod-schema" "@sinclair/typemap"; fi
 
-  # ---- DevOps: ArgoCD + Kubernetes deploy ------------------------------------
-  # Any of these implies the project ships somewhere containerised / orchestrated.
-  # @neolinkrnd/* deps mean it's a Neolink service — we always deploy those via ArgoCD.
+  # ---- DevOps: ArgoCD + Kubernetes -----------------------------------------
+  IS_DEVOPS=0
   for marker in Dockerfile Dockerfile.prod Dockerfile.dev \
                 docker-compose.yml docker-compose.yaml compose.yml compose.yaml \
                 Chart.yaml skaffold.yaml kustomization.yaml; do
-    has_file "$marker" && flag_skill "argocd-k8s-deploy" "$marker"
+    if has_file "$marker"; then
+      IS_DEVOPS=1
+      flag_entry "skill" "argocd-k8s-deploy" "$marker"
+    fi
   done
   for d in k8s kubernetes manifests deploy helm charts .argocd argocd; do
-    has_dir "$d" && flag_skill "argocd-k8s-deploy" "$d/"
+    if has_dir "$d"; then
+      IS_DEVOPS=1
+      flag_entry "skill" "argocd-k8s-deploy" "$d/"
+    fi
   done
-  have_dep_prefix "@neolinkrnd/" && flag_skill "argocd-k8s-deploy" "@neolinkrnd/* (Neolink service)"
+  if have_dep_prefix "@neolinkrnd/"; then
+    IS_DEVOPS=1
+    flag_entry "skill" "argocd-k8s-deploy" "@neolinkrnd/* (Neolink service)"
+  fi
+  [ "$IS_DEVOPS" -eq 1 ] && flag_entry "agent" "deploy-captain" "deploy markers"
+
+  # ---- Full-stack monorepo: shared schemas + agent-teams skill -------------
+  if [ "$IS_BACKEND" -eq 1 ] && [ "$IS_FRONTEND" -eq 1 ]; then
+    flag_entry "agent" "schema-owner"  "full-stack monorepo"
+    flag_entry "skill" "agent-teams"   "full-stack monorepo"
+  fi
+
+  # ---- Project settings: preselect only if no settings.json exists yet -----
+  if [ ! -f "$TARGET_PATH/.claude/settings.json" ]; then
+    flag_entry "settings" "enable agent teams + auto memory" "no existing settings.json"
+  fi
 fi
 
+# --all forces every skill + agent (but NOT settings — that can clobber existing config)
 if [ "$FORCE_ALL" -eq 1 ]; then
-  for i in $(seq 0 $((N - 1))); do SELECTED[$i]=1; done
+  for i in $(seq 0 $((N - 1))); do
+    case "${ENTRY_KIND[$i]}" in
+      skill|agent) ENTRY_SELECTED[$i]=1 ;;
+    esac
+  done
 fi
+
+# Force-select via flags
+force_select() {
+  # $1 = kind, $2 = name
+  local kind="$1" name="$2" i matched=0
+  for i in $(seq 0 $((N - 1))); do
+    if [ "${ENTRY_KIND[$i]}" = "$kind" ] && [ "${ENTRY_NAME[$i]}" = "$name" ]; then
+      ENTRY_SELECTED[$i]=1
+      ENTRY_DETECTED[$i]="${ENTRY_DETECTED[$i]:+${ENTRY_DETECTED[$i]}, }--$kind"
+      matched=1
+    fi
+  done
+  if [ "$matched" -eq 0 ]; then
+    echo "warn: --$kind=$name not found" >&2
+  fi
+  return 0
+}
 
 if [ "${#FORCE_SKILLS[@]}" -gt 0 ]; then
-  for forced in "${FORCE_SKILLS[@]}"; do
-    matched=0
-    for i in $(seq 0 $((N - 1))); do
-      if [ "${SKILL_NAMES[$i]}" = "$forced" ]; then
-        SELECTED[$i]=1
-        DETECTED[$i]="${DETECTED[$i]:+${DETECTED[$i]}, }--skill"
-        matched=1
-      fi
-    done
-    [ "$matched" -eq 0 ] && echo "warn: --skill=$forced not found" >&2
-  done
+  for s in "${FORCE_SKILLS[@]}"; do force_select "skill" "$s"; done
+fi
+if [ "${#FORCE_AGENTS[@]}" -gt 0 ]; then
+  for a in "${FORCE_AGENTS[@]}"; do force_select "agent" "$a"; done
+fi
+if [ "$FORCE_SETTINGS" -eq 1 ]; then
+  force_select "settings" "enable agent teams + auto memory"
 fi
 
 # --- menu rendering -----------------------------------------------------------
@@ -275,20 +333,35 @@ render_menu() {
   echo
   echo "Target:  $TARGET_PATH"
   echo "Source:  $SOURCE_DIR"
-  [ -f "$PKG_JSON" ] && echo "Package: $(grep -m1 '"name"' "$PKG_JSON" 2>/dev/null | sed 's/[[:space:]]*"name"[[:space:]]*:[[:space:]]*"\(.*\)".*/\1/')"
+  [ -f "$PKG_JSON" ] && echo "Package: $(grep -m1 '"name"' "$PKG_JSON" 2>/dev/null | sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
   echo
-  local last_cat="" mark idx line i
+  local last_kind="" last_cat="" k c mark idx line i
   for i in $(seq 0 $((N - 1))); do
-    if [ "${SKILL_CATEGORIES[$i]}" != "$last_cat" ]; then
-      echo "  [${SKILL_CATEGORIES[$i]}]"
-      last_cat="${SKILL_CATEGORIES[$i]}"
+    k="${ENTRY_KIND[$i]}"
+    c="${ENTRY_CATEGORY[$i]}"
+    if [ "$k" != "$last_kind" ]; then
+      case "$k" in
+        skill)    echo "Skills:" ;;
+        agent)    echo; echo "Agents (subagents; also usable as agent-team teammates):" ;;
+        settings) echo; echo "Project settings:" ;;
+      esac
+      last_kind="$k"
+      last_cat=""
+    fi
+    if [ "$k" != "settings" ] && [ "$c" != "$last_cat" ]; then
+      echo "  [$c]"
+      last_cat="$c"
     fi
     mark="[ ]"
-    [ "${SELECTED[$i]}" -eq 1 ] && mark="[x]"
+    [ "${ENTRY_SELECTED[$i]}" -eq 1 ] && mark="[x]"
     idx=$((i + 1))
-    printf -v line "    %s %2d) %-28s" "$mark" "$idx" "${SKILL_NAMES[$i]}"
-    if [ -n "${DETECTED[$i]}" ]; then
-      line="$line  # detected: ${DETECTED[$i]}"
+    if [ "$k" = "settings" ]; then
+      printf -v line "    %s %2d) %s" "$mark" "$idx" "${ENTRY_NAME[$i]}"
+    else
+      printf -v line "    %s %2d) %-28s" "$mark" "$idx" "${ENTRY_NAME[$i]}"
+    fi
+    if [ -n "${ENTRY_DETECTED[$i]}" ]; then
+      line="$line  # ${ENTRY_DETECTED[$i]}"
     fi
     echo "$line"
   done
@@ -306,11 +379,15 @@ if [ "$FORCE_YES" -eq 0 ] && [ "$FORCE_ALL" -eq 0 ]; then
     case "$input" in
       "")   break ;;
       q|Q)  echo "cancelled."; exit 0 ;;
-      a|A)  for i in $(seq 0 $((N - 1))); do SELECTED[$i]=1; done ;;
-      n|N)  for i in $(seq 0 $((N - 1))); do SELECTED[$i]=0; done ;;
+      a|A)
+        for i in $(seq 0 $((N - 1))); do ENTRY_SELECTED[$i]=1; done
+        ;;
+      n|N)
+        for i in $(seq 0 $((N - 1))); do ENTRY_SELECTED[$i]=0; done
+        ;;
       s|S)
         for i in $(seq 0 $((N - 1))); do
-          if [ -n "${DETECTED[$i]}" ]; then SELECTED[$i]=1; else SELECTED[$i]=0; fi
+          if [ -n "${ENTRY_DETECTED[$i]}" ]; then ENTRY_SELECTED[$i]=1; else ENTRY_SELECTED[$i]=0; fi
         done
         ;;
       *)
@@ -320,7 +397,11 @@ if [ "$FORCE_YES" -eq 0 ] && [ "$FORCE_ALL" -eq 0 ]; then
             *)
               idx=$((tok - 1))
               if [ "$idx" -ge 0 ] && [ "$idx" -lt "$N" ]; then
-                if [ "${SELECTED[$idx]}" -eq 1 ]; then SELECTED[$idx]=0; else SELECTED[$idx]=1; fi
+                if [ "${ENTRY_SELECTED[$idx]}" -eq 1 ]; then
+                  ENTRY_SELECTED[$idx]=0
+                else
+                  ENTRY_SELECTED[$idx]=1
+                fi
               else
                 echo "  (out of range: $tok)"
               fi
@@ -334,31 +415,67 @@ fi
 
 # --- install ------------------------------------------------------------------
 
-mkdir -p "$TARGET_PATH/.claude/skills"
+mkdir -p "$TARGET_PATH/.claude/skills" "$TARGET_PATH/.claude/agents"
 
-installed=0
-installed_names=""
-for i in $(seq 0 $((N - 1))); do
-  [ "${SELECTED[$i]}" -eq 1 ] || continue
-  src="${SKILL_PATHS[$i]}"
-  dst="$TARGET_PATH/.claude/skills/${SKILL_NAMES[$i]}"
+install_path() {
+  # $1 = source (file or dir), $2 = destination
+  local src="$1" dst="$2"
   if [ "$MODE" = "symlink" ]; then
     ln -snf "$src" "$dst"
   else
     rm -rf "$dst"
-    cp -R "$src" "$dst"
+    if [ -d "$src" ]; then cp -R "$src" "$dst"; else cp "$src" "$dst"; fi
   fi
-  installed=$((installed + 1))
-  installed_names="${installed_names}  - ${SKILL_NAMES[$i]}
+}
+
+skills_installed=0
+agents_installed=0
+settings_result=""
+installed_lines=""
+
+for i in $(seq 0 $((N - 1))); do
+  [ "${ENTRY_SELECTED[$i]}" -eq 1 ] || continue
+  case "${ENTRY_KIND[$i]}" in
+    skill)
+      install_path "${ENTRY_SRC[$i]}" "$TARGET_PATH/.claude/skills/${ENTRY_NAME[$i]}"
+      skills_installed=$((skills_installed + 1))
+      installed_lines="${installed_lines}  skill  ${ENTRY_NAME[$i]}
 "
+      ;;
+    agent)
+      install_path "${ENTRY_SRC[$i]}" "$TARGET_PATH/.claude/agents/${ENTRY_NAME[$i]}.md"
+      agents_installed=$((agents_installed + 1))
+      installed_lines="${installed_lines}  agent  ${ENTRY_NAME[$i]}
+"
+      ;;
+    settings)
+      settings_target="$TARGET_PATH/.claude/settings.json"
+      if [ -f "$settings_target" ]; then
+        settings_result="skipped — $settings_target already exists (merge manually if desired)"
+      else
+        cp "${ENTRY_SRC[$i]}" "$settings_target"
+        settings_result="wrote $settings_target (agent teams + auto memory enabled)"
+      fi
+      ;;
+  esac
 done
 
+total=$((skills_installed + agents_installed))
 echo
-if [ "$installed" -eq 0 ]; then
+if [ "$total" -eq 0 ] && [ -z "$settings_result" ]; then
   echo "Nothing selected. No changes made."
-else
-  echo "Installed $installed skill(s) into $TARGET_PATH/.claude/skills (mode: $MODE):"
-  printf "%s" "$installed_names"
-  echo
-  echo "Restart Claude Code in that project to pick them up."
+  exit 0
 fi
+
+echo "Installed into $TARGET_PATH/.claude (mode: $MODE):"
+echo "  skills: $skills_installed"
+echo "  agents: $agents_installed"
+if [ -n "$settings_result" ]; then
+  echo "  settings: $settings_result"
+fi
+if [ -n "$installed_lines" ]; then
+  echo
+  printf "%s" "$installed_lines"
+fi
+echo
+echo "Restart Claude Code in that project to pick up changes."

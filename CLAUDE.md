@@ -32,8 +32,26 @@ Skills here should assume and reinforce this stack. If a user asks for something
 - `frontend/angular-19-component` — standalone / signals / new control flow / Material + Tailwind rules.
 - `frontend/nx-angular-library` — library types (feature/ui/data-access/util), scope tags, boundary rules.
 - `shared/zod-schema` — schema location, input vs output, strictness, Zod→JSON Schema via typemap.
+- `shared/agent-teams` — when to spawn an agent team, which subagents to use as teammates, canonical spawn prompts.
 - `devops/argocd-k8s-deploy` — GitOps flow, image-tag bump, promotion, rollback, no-`kubectl-apply` rule.
 - `skills/example-skill/` — placeholder reference. Do not delete.
+
+## Subagents that already exist (don't duplicate, prefer editing)
+
+Every subagent here is installable as a plain subagent AND usable as a teammate in an agent team.
+
+- `agents/backend/backend-implementer.md` — hands-on Fastify + tRPC implementer.
+- `agents/frontend/frontend-implementer.md` — hands-on Angular 19 implementer.
+- `agents/shared/schema-owner.md` — owns shared Zod schemas under `libs/shared/*/util/schemas/`.
+- `agents/shared/reviewer.md` — PR reviewer; gets assigned a lens at spawn (security, performance, coverage, conventions, deploy-safety).
+- `agents/devops/deploy-captain.md` — deploy / promote / rollback through the ArgoCD flow; never imperatively mutates the cluster.
+
+## Settings fragments
+
+- `settings/recommended.json` — enables `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` and `autoMemoryEnabled`. Written to `<target>/.claude/settings.json` by `install-project.sh --with-settings` (or via the interactive menu's "enable agent teams + auto memory" entry), but only if the target has no existing `settings.json`.
+- `settings/agent-teams.json` — just the agent teams env flag, for teams that manage memory differently.
+
+Do not write settings to `~/.claude/settings.json` from the installer — user-scope settings belong to the user, not the team presets.
 
 ## Adding a skill
 
@@ -70,8 +88,11 @@ Skills here should assume and reinforce this stack. If a user asks for something
 - Must work on macOS stock `bash 3.2` and modern Linux `bash`. No `declare -A`, no process substitution into read-from-array patterns that rely on bash 4+. Use `<<EOF $(...)` heredocs for piping `find` output into `while IFS= read` loops — that's the pattern already established.
 - Run `bash -n <script>` after every edit as a syntax check.
 - `install.sh` must stay idempotent and non-interactive. Flags only.
-- `install-project.sh` is interactive by default, non-interactive with `--yes` / `--all` / `--skill=`. Detection reads only from `$TARGET_PATH` — never from this repo, never from `destroy/`, never from `~`. When you add a new skill that maps to a detectable signal, extend the detection block (search for the `if [ "$NO_SUGGEST" -eq 0 ]` guard) with a new `flag_skill <name> <reason>` call.
-- Detection helpers already available: `have_dep_literal`, `have_dep_prefix`, `has_file`, `has_dir`, `has_file_glob`. Prefer those over inline `grep`/`test` so rules stay consistent.
+- `install-project.sh` is interactive by default, non-interactive with `--yes` / `--all` / `--skill=` / `--agent=` / `--with-settings`. Detection reads only from `$TARGET_PATH` — never from this repo, never from `~`.
+- Entry types managed by a single array family (`ENTRY_KIND`, `ENTRY_NAME`, `ENTRY_SRC`, `ENTRY_CATEGORY`, `ENTRY_SELECTED`, `ENTRY_DETECTED`). `ENTRY_KIND` is `skill` | `agent` | `settings`. Adding new entries means appending to the arrays during discovery.
+- When you add a new skill or agent that maps to a detectable signal, extend the detection block (search for the `if [ "$NO_SUGGEST" -eq 0 ]` guard) with a new `flag_entry <kind> <name> <reason>` call. Do not duplicate helpers — use `have_dep_literal`, `have_dep_prefix`, `has_file`, `has_dir`, `has_file_glob`.
+- `set -e` footgun: functions that end on a `&& <cmd>` chain where the test can fail will cause the script to exit when called from a `then` body. Always end helpers with an explicit `return 0`. `flag_entry` and `force_select` already follow this pattern — keep it.
+- The settings pseudo-entry is special: it never symlinks. It writes `settings/recommended.json` to `<target>/.claude/settings.json` only if that file doesn't exist. Do not add logic that mutates an existing `settings.json` without the user's explicit ask — JSON merge in bash is unsafe.
 
 ## Testing the detector after changes
 
@@ -84,14 +105,17 @@ Construct fake project trees in a temp dir and run `install-project.sh <tmp> --y
 
 ## When the user asks to add X
 
-The user will typically say something like "add a skill for writing Rails migrations" or "add a subagent for reviewing Go PRs". Your default sequence:
+Typical requests: "add a skill for writing Rails migrations", "add a subagent for Go PRs", "add an agent team role for QA". Default sequence:
 
-1. Confirm the category (ask if ambiguous).
-2. Check the "Skills that already exist" list above — if something close exists, extend it instead of adding a sibling.
-3. Read the right template.
-4. Write the new file at the right path. Descriptions must be specific "Use when…" sentences; generic ones are worse than nothing because they make existing skills less discoverable.
-5. If the new entry names a file, function, or flag from the stack, verify it against the real package (`destroy/package-*.json` has representative dependency snapshots while this repo is young).
-6. Update the "Skills that already exist" list above and the one in `USAGE.md`.
-7. Update `README.md` only if you added a new category.
-8. Run `./install.sh` and confirm the count increased as expected.
-9. Suggest a git commit message — do not commit unless asked.
+1. Decide the type: skill (auto-triggered knowledge), subagent (delegatable worker, usable standalone or as teammate), or settings fragment.
+2. Pick the category under `skills/<cat>/` or `agents/<cat>/`. Ask if ambiguous.
+3. Check the inventory above — if something close exists, extend it instead of adding a sibling.
+4. Start from the matching template. Descriptions must be specific "Use when…" sentences.
+5. If the new entry maps to a detectable signal (dependency, marker file), extend the detection block in `install-project.sh` — otherwise users have to force-include it via `--skill=` / `--agent=`.
+6. Update the inventory list in this file AND in `USAGE.md`. Update `README.md` only if you added a new category.
+7. Run `./install.sh` and `./install-project.sh <tmp> --all` against a scratch dir to confirm counts increase as expected.
+8. Suggest a git commit message — do not commit unless asked.
+
+## The `destroy/` directory
+
+`destroy/` holds two historical `package-*.json` files the user put there as reference dependency snapshots. The installers never read from `destroy/` — detection is scoped to the target project only. Don't reference `destroy/` as a source of truth for current stack details; read the actual files in the target repo instead. The user may delete `destroy/` at any time; keep your work independent of it.

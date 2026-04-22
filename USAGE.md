@@ -78,6 +78,91 @@ The picker reads files **only from the target project** — its `package.json` a
 
 Multiple signals for the same skill stack up in the "# detected:" reason shown in the menu, giving you a quick confidence read on each preselection.
 
+**Subagents (agents)** are discovered and preselected by the same signals:
+
+| Signal class | Agent preselected |
+|--------------|-------------------|
+| Backend detected | `backend-implementer` |
+| Frontend detected | `frontend-implementer` |
+| DevOps marker detected | `deploy-captain` |
+| Both backend AND frontend detected (full-stack monorepo) | `schema-owner` + the `agent-teams` skill |
+
+`reviewer` is not preselected — it's an opt-in for code-review workflows. Toggle it in the menu or pass `--agent=reviewer` to force-include it.
+
+## Agent Teams
+
+The installer also optionally writes a project `.claude/settings.json` that enables [Claude Code's Agent Teams](https://code.claude.com/docs/en/agent-teams) — experimental parallel-Claude-Code-sessions coordinated via a shared task list. This lets you work on backend and frontend simultaneously, with a `backend-implementer` teammate and a `frontend-implementer` teammate in separate contexts, coordinating through the lead.
+
+### Enabling
+
+Two paths:
+
+1. Run `./install-project.sh <path> --with-settings` (or toggle the "enable agent teams + auto memory" entry in the interactive menu). The installer writes `.claude/settings.json` only if one doesn't already exist. If one does, it prints a skip message and you merge manually — see `settings/README.md` for the exact keys.
+2. Manually add to your `.claude/settings.json`:
+
+    ```json
+    {
+      "env": { "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1" },
+      "autoMemoryEnabled": true
+    }
+    ```
+
+Restart Claude Code after changing settings. Split-pane display needs `tmux` or iTerm2 with the `it2` CLI; in-process mode (Shift+Down to cycle teammates) works anywhere.
+
+### When to spawn a team
+
+The `agent-teams` skill (installed when the detector sees both backend and frontend signals) has the full playbook. In short:
+
+- **Full-stack feature** — `backend-implementer` + `frontend-implementer` + `schema-owner`, coordinated by the lead.
+- **Parallel code review** — 2–3 `reviewer` teammates with different lenses (security / performance / coverage) that challenge each other.
+- **Bug with competing hypotheses** — multiple investigators that try to disprove each other's theories. Converges on the root cause faster than a single anchored agent.
+
+Example spawn prompt for a full-stack feature:
+
+    Create an agent team to add the "Shipment" domain:
+    - schema-owner: add shared Shipment input/output schemas under libs/shared/logistics/util/schemas/.
+    - backend-implementer: add the tRPC shipmentRouter with CRUD procedures.
+    - frontend-implementer: add libs/portal/shipments/feature-list with a data-access store consuming the router.
+    Require plan approval before the implementers make changes.
+
+### Limits to know
+
+- **One team per session.** Clean up (`Clean up the team`) before starting another.
+- **No nested teams.** Teammates can't spawn sub-teams.
+- **Higher token cost.** Each teammate is a separate Claude instance. Use for work that genuinely benefits from parallelism.
+- **Session resume doesn't restore in-process teammates.** After `/resume`, tell the lead to respawn teammates.
+
+## Auto Memory
+
+Auto memory is Claude Code's mechanism for accumulating knowledge across sessions without you writing anything. It complements `CLAUDE.md` — where `CLAUDE.md` is what **you** tell Claude, auto memory is what **Claude notes for itself** based on corrections and patterns it sees during your work.
+
+### How it works on Neolink projects
+
+- **On by default** in Claude Code v2.1.59+. The installer writes `autoMemoryEnabled: true` into `.claude/settings.json` to make the intent explicit.
+- **Per-project, machine-local**: notes live at `~/.claude/projects/<project>/memory/MEMORY.md` on your machine. Not shared via git; not shared across machines.
+- **Loaded at session start**: the first 200 lines / 25 KB of `MEMORY.md` are read into every session. Claude moves deeper notes into topic files that it reads on demand.
+- **You can audit it anytime** with `/memory` in a Claude Code session. It's all plain markdown — edit or delete as you like.
+
+### Why it matters here
+
+Work on Neolink spans services and is bursty — a tRPC refactor today, a deploy tomorrow, a bug triage next week. Auto memory captures things Claude learned the hard way ("this service uses the `mssql` driver, not Mongoose — we found out when the previous migration failed") so future sessions don't relearn the same lesson.
+
+It's a safety net against context loss, not a replacement for `CLAUDE.md`. The division:
+
+| Put it in… | When |
+|------------|------|
+| `CLAUDE.md` | Stable, repeatable rules you'd want every teammate to follow |
+| Auto memory | Claude-discovered facts and preferences, especially machine-local ones you don't want in git |
+| A skill in this repo | Multi-step workflows or conventions that apply across projects |
+
+### Interaction with `CLAUDE.md`
+
+Both are loaded at session start. When they conflict, Claude may pick either — keep `CLAUDE.md` authoritative and let auto memory be the "oh, also" layer. If you see auto memory drifting from team policy, open `/memory`, edit the offending note, and push the rule into `CLAUDE.md` or a skill so it travels via git.
+
+### Turning it off
+
+If you need to, set `"autoMemoryEnabled": false` in `.claude/settings.local.json` (so it's personal, not committed) or `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` as an env var.
+
 ### Menu commands
 
 - `1 3 5` — toggle entries 1, 3, 5 (space-separated numbers)
@@ -125,13 +210,27 @@ When a project imports from this repo, its `CLAUDE.md` should be short and addit
 
 ## What lives here today
 
+**Skills** (auto-triggered by description match):
+
 - Backend: `fastify-trpc-service`, `fastify-plugin`
 - Frontend: `angular-19-component`, `nx-angular-library`
-- Shared: `zod-schema`
+- Shared: `zod-schema`, `agent-teams`
 - DevOps: `argocd-k8s-deploy`
-- Example: `example-skill` (reference, don't delete)
+- Reference: `example-skill` (don't delete)
 
-Categories `mobile` and `data` are scaffolded empty — add when needed.
+**Subagents** (delegatable workers; also usable as agent-team teammates):
+
+- Backend: `backend-implementer`
+- Frontend: `frontend-implementer`
+- Shared: `schema-owner`, `reviewer`
+- DevOps: `deploy-captain`
+
+**Settings fragments** (optional, opt-in via `--with-settings`):
+
+- `settings/recommended.json` — enables agent teams + explicit auto memory
+- `settings/agent-teams.json` — agent teams only
+
+Skill categories `mobile` and `data` are scaffolded empty — add when needed.
 
 ## Contributing back
 

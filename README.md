@@ -12,11 +12,12 @@ cd ~/neolink/team-claude-skills
 ./install.sh user --copy                  # copy files instead of symlinking
 
 ./install-project.sh <path>               # interactive per-project picker with stack detection
-./install-project.sh <path> --yes         # accept detected skills, no prompts
-./install-project.sh <path> --all         # install every skill into that project
+./install-project.sh <path> --yes         # accept detected skills/agents/settings, no prompts
+./install-project.sh <path> --all         # install every skill & agent into that project
+./install-project.sh <path> --with-settings  # also write .claude/settings.json (agent teams + auto memory)
 ```
 
-Use `install.sh` for the "give me everything" case, and `install-project.sh` to cherry-pick skills into a specific repo based on its `package.json` (detects Fastify, tRPC, Angular, Zod, Dockerfile, `@neolinkrnd/*`, etc.).
+`install-project.sh` picks skills, subagents, and (optionally) a `settings.json` fragment based on the target's `package.json` and marker files. The settings fragment enables [Agent Teams](https://code.claude.com/docs/en/agent-teams) (experimental) and [Auto Memory](https://code.claude.com/docs/en/memory#auto-memory), so you can run backend and frontend teammates in parallel and let Claude accumulate project learnings across sessions.
 
 Symlink mode is the default. Once installed, a `git pull` in this repo updates everyone's Claude Code — no reinstall needed.
 
