@@ -8,16 +8,19 @@ Every engineer at Neolink who uses Claude Code. The goal of this repo is that Cl
 
 ## Installing
 
-Two installers. Pick based on what you want:
+Three tools, same underlying semantics. Pick the one that fits:
 
-| What you want | Command | Notes |
-|---------------|---------|-------|
+| What you want | How | Notes |
+|---------------|-----|-------|
 | Every team skill available globally | `./install.sh` | Symlinks into `~/.claude/{skills,agents,commands}`. Fire-and-forget. |
 | Every team skill scoped to one repo | `./install.sh project` (run *inside* the repo) | Symlinks into `<repo>/.claude/`. Overrides user-scope entries of the same name. |
-| **Cherry-pick skills for a specific project** | `./install-project.sh <path>` | Interactive menu. Detects the stack from `<path>/package.json` and preselects relevant skills. |
+| **Cherry-pick for a specific project (CLI)** | `./install-project.sh <path>` | Interactive terminal menu. Detects the stack and preselects. |
+| **Cherry-pick for a specific project (browser)** | `node tools/skill-manager/server.js` then open `http://localhost:4599` | Same semantics, checkbox UI. Zero npm install. |
 | Accept what the detector picked | `./install-project.sh <path> --yes` | No prompts. Great for fresh clones. |
 | Everything into one project | `./install-project.sh <path> --all` | Equivalent to `install.sh project` run inside `<path>`. |
-| Copy instead of symlink | add `--copy` to any of the above | Snapshot, no live updates on `git pull`. Rare; prefer symlinks. |
+| Copy instead of symlink | add `--copy` to any CLI invocation | Snapshot, no live updates on `git pull`. Rare; prefer symlinks. |
+
+The browser UI and the CLI share the same detection rules and install semantics. Use whichever feels faster for the task — the web app shines when you're managing multiple projects at once and want to see at-a-glance what's installed where.
 
 Start with `./install.sh` for your machine. Use `install-project.sh` when a repo has a focused stack (frontend-only, infra-only, …) and you'd rather not see irrelevant backend skills in that project's Claude.
 
@@ -33,7 +36,7 @@ cd ~/neolink/team-claude-skills && git pull   # everyone gets updates instantly
 
 The picker reads files **only from the target project** — its `package.json` and a few root-level marker files/directories. It never inspects this repo, your home dir, or anywhere else.
 
-**Backend — Fastify + tRPC** (triggers `fastify-trpc-service`, `fastify-plugin`)
+**Backend — Fastify gateway + observability + API spec** (triggers `neolink-fastify-gateway-generator`, `neolink-gateway-setup`, `api-spec-generator`)
 
 | Signal | Source |
 |--------|--------|
@@ -41,11 +44,11 @@ The picker reads files **only from the target project** — its `package.json` a
 | `@fastify/autoload` dep | `package.json` |
 | `fastify-plugin` dep | `package.json` |
 | any `@neolinkrnd/fastify-bundle-*` dep | `package.json` (strong — Neolink backend) |
-| `@trpc/server` dep (only strengthens if backend already detected) | `package.json` |
+| `@trpc/server` dep (only if backend already detected) | `package.json` |
 | `@sinclair/typemap` dep (only if backend) | `package.json` |
 | `@nx/node` dev dep (only if backend) | `package.json` |
 
-**Frontend — Angular 19** (triggers `angular-19-component`, `nx-angular-library`)
+**Frontend — Angular 21 + NX** (triggers `angular-nx-architect`, `angular-unit-test`, and `angular-neolink-template` for portal repos)
 
 | Signal | Source |
 |--------|--------|
@@ -54,7 +57,8 @@ The picker reads files **only from the target project** — its `package.json` a
 | `@nx/angular` dep | `package.json` |
 | `@angular/material`, `tailwindcss` deps (strengthen) | `package.json` |
 | `tailwind.config.*`, `vitest.config.*`, `playwright.config.*` (strengthen) | root files |
-| `@analogjs/vitest-angular` dep (strengthen) | `package.json` |
+| `vitest` dep (strengthens `angular-unit-test`) | `package.json` |
+| package name matches `/portal|neolink/i` OR `apps/portal-*` present | `package.json` name / directory | → adds `angular-neolink-template` |
 
 **Shared** (triggers `zod-schema`)
 
@@ -181,7 +185,7 @@ You can see which skills matched in Claude Code's session log. If the right skil
 
 ## Using a team skill on a project
 
-After install, just work normally. When you ask Claude something like *"add a tRPC router for the Shipments domain"*, Claude reads `fastify-trpc-service`, follows the conventions it encodes, and produces code that matches the rest of our codebase.
+After install, just work normally. When you ask Claude something like *"add an endpoint to the gateway for the Shipments domain"*, Claude reads `neolink-fastify-gateway-generator`, follows the conventions it encodes, and produces code that matches the rest of our codebase.
 
 You don't need to `/invoke` anything. Skills auto-attach.
 
@@ -201,7 +205,7 @@ When a project imports from this repo, its `CLAUDE.md` should be short and addit
 
     # CLAUDE.md (project-level)
 
-    Stack: NX + Fastify + tRPC backend, see the team's `fastify-trpc-service` skill
+    Stack: NX + Fastify gateway + tRPC backend, see the team's `neolink-fastify-gateway-generator` skill
     for house conventions. This repo adds:
 
     - Database: PostgreSQL (NOT the team default MongoDB). Mongoose is not installed.
@@ -212,11 +216,11 @@ When a project imports from this repo, its `CLAUDE.md` should be short and addit
 
 **Skills** (auto-triggered by description match):
 
-- Backend: `fastify-trpc-service`, `fastify-plugin`
-- Frontend: `angular-19-component`, `nx-angular-library`
-- Shared: `zod-schema`, `agent-teams`
+- Backend: `neolink-fastify-gateway-generator`, `neolink-gateway-setup`, `api-spec-generator`
+- Frontend: `angular-nx-architect`, `angular-neolink-template` (portal repos only), `angular-unit-test`
+- Shared: `zod-schema`, `agent-teams`, `team-lead`, `code-memory-updater`, `consolidate-memory`, `skill-creator`, `schedule`, `setup-cowork`
 - DevOps: `argocd-k8s-deploy`
-- Reference: `example-skill` (don't delete)
+- Document formats: `docs/docx`, `docs/pdf`, `docs/pptx`, `docs/xlsx` (user-triggered; not preselected by stack detection)
 
 **Subagents** (delegatable workers; also usable as agent-team teammates):
 
@@ -229,8 +233,6 @@ When a project imports from this repo, its `CLAUDE.md` should be short and addit
 
 - `settings/recommended.json` — enables agent teams + explicit auto memory
 - `settings/agent-teams.json` — agent teams only
-
-Skill categories `mobile` and `data` are scaffolded empty — add when needed.
 
 ## Contributing back
 

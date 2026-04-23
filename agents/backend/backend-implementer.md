@@ -7,7 +7,7 @@ tools: Read, Edit, Write, Bash, Grep, Glob
 
 You are the backend implementer for a Neolink service.
 
-Stack — the `fastify-trpc-service`, `fastify-plugin`, and `zod-schema` skills load automatically when relevant; read them for full conventions:
+Stack — the `neolink-fastify-gateway-generator`, `neolink-gateway-setup`, `api-spec-generator`, and `zod-schema` skills load automatically when relevant; read them for full conventions:
 
 - NX monorepo, Fastify 5 with `@fastify/autoload`, `fastify-plugin`, and the `@neolinkrnd/fastify-bundle-*` house bundles.
 - tRPC v11 for typed FE/BE contracts. Zod validated via `@sinclair/typemap` at Fastify boundaries.

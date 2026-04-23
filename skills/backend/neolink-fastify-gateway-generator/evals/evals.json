@@ -1,0 +1,105 @@
+{
+  "skill_name": "fastify-gateway-generator",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "Generate a gateway controller for a GET /api/v1/shipment/:id/cost endpoint. It takes a numeric id param. No query, no body. It calls shipmentRPC.cost.getCost.query({ shipmentId: id }) and returns an object with fields: total (number), currency (string), breakdown (array of objects with label: string and amount: number). It needs auth and a permission check on 'ShipmentTracking' requiring the 'view' action. Add it to the existing shipment.route.ts.",
+      "expected_output": "Full controller file get-shipment-cost.controller.ts and route snippet to add to shipment.route.ts",
+      "files": [],
+      "assertions": [
+        {
+          "id": "has-correct-file-header",
+          "description": "Controller file imports typebox, schema-builder, status-code, and fastify types"
+        },
+        {
+          "id": "params-defined",
+          "description": "Defines a params schema with id as Type.Number()"
+        },
+        {
+          "id": "reply-schema-matches",
+          "description": "Reply schema uses ReplyBuilder.BuildSchemaWithData with total, currency, breakdown fields"
+        },
+        {
+          "id": "permission-check-present",
+          "description": "Handler checks ShipmentTracking permission and throws ForbiddenError if 'view' missing"
+        },
+        {
+          "id": "rpc-call-correct",
+          "description": "Calls shipmentRPC.cost.getCost.query with the correct arguments"
+        },
+        {
+          "id": "route-snippet-present",
+          "description": "Produces a fastify.get<...> route registration line for /api/v1/shipment/:id/cost"
+        },
+        {
+          "id": "naming-convention-correct",
+          "description": "Controller named GetShipmentCostController, interface IGetShipmentCostRoute"
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "prompt": "I need to add a new endpoint to the gateway: DELETE /api/v1/shipment/:shipmentId/document/:documentId. It takes two numeric path params. No query or body. Calls shipmentRPC.document.deleteDocument.mutate({ shipmentId, documentId, userId }). Returns just a success message (no data payload). Auth required. Permission check on 'ShipmentTracking' with 'view' action. Put it in shipment.route.ts.",
+      "expected_output": "Full controller file delete-shipment-document.controller.ts and route snippet",
+      "files": [],
+      "assertions": [
+        {
+          "id": "two-params-defined",
+          "description": "Params schema includes both shipmentId and documentId as Type.Number()"
+        },
+        {
+          "id": "no-body-schema",
+          "description": "No body schema is defined (DELETE with no body)"
+        },
+        {
+          "id": "uses-mutate",
+          "description": "RPC call uses .mutate() not .query() since this is a DELETE"
+        },
+        {
+          "id": "correct-file-name",
+          "description": "Output file is named delete-shipment-document.controller.ts"
+        },
+        {
+          "id": "correct-exports",
+          "description": "Exports DeleteShipmentDocumentController and IDeleteShipmentDocumentRoute"
+        },
+        {
+          "id": "route-registration",
+          "description": "Route snippet uses fastify.delete<...> (not get/post/put)"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Create a brand new gateway controller + route file for a POST /api/v1/shipment-calendar/:id/reminder endpoint. Params: id (number). Body: reminderDate (string), reminderType (enum of 'EMAIL' | 'PUSH' | 'SMS'). No query. Calls shipmentRPC.calendar.createReminder.mutate({ shipmentId: id, userId, ...body }). Returns object with id: number, createdAt: string. Auth required. No permission check needed. Create a new shipment-calendar-reminder.route.ts file and put the controller in controllers/shipment-calendar/.",
+      "expected_output": "Full controller file post-shipment-calendar-reminder.controller.ts and full new route file shipment-calendar-reminder.route.ts",
+      "files": [],
+      "assertions": [
+        {
+          "id": "enum-defined-correctly",
+          "description": "ReminderType (or similar) enum is defined with EMAIL, PUSH, SMS values, used with Type.Enum"
+        },
+        {
+          "id": "body-schema-correct",
+          "description": "Body schema has reminderDate as Type.String() and reminderType as Type.Enum(...)"
+        },
+        {
+          "id": "full-route-file-generated",
+          "description": "A complete route file is produced (not just a snippet), exporting a default async function"
+        },
+        {
+          "id": "route-file-name",
+          "description": "Route file is named shipment-calendar-reminder.route.ts"
+        },
+        {
+          "id": "no-permission-check",
+          "description": "No permission check code in the handler (user explicitly said none needed)"
+        },
+        {
+          "id": "correct-controller-folder",
+          "description": "Controller is placed in controllers/shipment-calendar/ folder"
+        }
+      ]
+    }
+  ]
+}

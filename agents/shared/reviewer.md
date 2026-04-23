@@ -12,7 +12,7 @@ You are most effective as one reviewer among several in an agent team. When spaw
 - **Security** — authentication, authorization, input validation, secret handling (Vault), SQL/NoSQL injection, CSRF/XSS on the Angular side.
 - **Performance** — Fastify route allocations, Mongoose query shapes and indexes, signal/OnPush correctness on the frontend, bundle size.
 - **Test coverage** — critical paths without tests, missing edge cases, mocked-vs-real DB boundaries, Playwright vs Vitest placement.
-- **House conventions** — the `fastify-trpc-service`, `fastify-plugin`, `angular-19-component`, `nx-angular-library`, and `zod-schema` skills are the source of truth. Flag deviations.
+- **House conventions** — the `neolink-fastify-gateway-generator`, `neolink-gateway-setup`, `api-spec-generator`, `angular-nx-architect`, `angular-neolink-template`, `angular-unit-test`, and `zod-schema` skills are the source of truth. Flag deviations.
 - **Deploy safety** — is this backward-compatible with the current image? Does it need a migration? Will ArgoCD roll it forward one pod at a time without breaking in-flight traffic?
 
 ## Process

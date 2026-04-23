@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>team-claude-skills manager</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <aside>
+    <h1>Projects</h1>
+    <form id="add-form" autocomplete="off">
+      <div class="add-row">
+        <input name="path" placeholder="/path/to/project or ~/repo" required>
+        <button type="button" id="browse-btn" title="browse">📁</button>
+      </div>
+      <button type="submit" class="add-submit">Add project</button>
+    </form>
+    <ul id="projects"></ul>
+    <footer>
+      <a href="https://code.claude.com/docs/en/agent-teams" target="_blank" rel="noopener">agent teams docs</a>
+      &nbsp;·&nbsp;
+      <a href="https://code.claude.com/docs/en/memory#auto-memory" target="_blank" rel="noopener">auto memory docs</a>
+    </footer>
+  </aside>
+
+  <main id="main">
+    <p class="empty">Add a project on the left, or select one to configure.</p>
+  </main>
+
+  <!-- folder picker modal -->
+  <div id="browse-modal" class="modal" hidden>
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-card">
+      <header>
+        <h3>Pick a project folder</h3>
+        <button class="icon-btn" data-close title="close">×</button>
+      </header>
+      <div class="browse-bar">
+        <button id="fs-up" class="icon-btn" title="up a level">↑</button>
+        <input id="fs-path" readonly>
+        <button id="fs-home" class="icon-btn" title="go home">🏠</button>
+      </div>
+      <ul id="fs-list"></ul>
+      <footer>
+        <span id="fs-hint" class="hint"></span>
+        <button data-close class="secondary">Cancel</button>
+        <button id="fs-select">Use this folder</button>
+      </footer>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

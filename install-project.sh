@@ -205,55 +205,67 @@ flag_entry() {
 }
 
 if [ "$NO_SUGGEST" -eq 0 ] && [ "$FORCE_ALL" -eq 0 ]; then
-  # ---- Backend: Fastify + tRPC ---------------------------------------------
+  # ---- Backend: Fastify gateway + observability + API spec -----------------
   IS_BACKEND=0
   if have_dep_literal "fastify"; then
     IS_BACKEND=1
-    flag_entry "skill" "fastify-trpc-service" "fastify"
-    flag_entry "skill" "fastify-plugin"       "fastify"
+    flag_entry "skill" "neolink-fastify-gateway-generator" "fastify"
+    flag_entry "skill" "neolink-gateway-setup"             "fastify"
+    flag_entry "skill" "api-spec-generator"                "fastify"
   fi
   if have_dep_literal "@fastify/autoload"; then
     IS_BACKEND=1
-    flag_entry "skill" "fastify-trpc-service" "@fastify/autoload"
+    flag_entry "skill" "neolink-fastify-gateway-generator" "@fastify/autoload"
   fi
   if have_dep_literal "fastify-plugin"; then
     IS_BACKEND=1
-    flag_entry "skill" "fastify-plugin" "fastify-plugin dep"
+    flag_entry "skill" "neolink-fastify-gateway-generator" "fastify-plugin dep"
   fi
   if have_dep_prefix "@neolinkrnd/fastify-bundle"; then
     IS_BACKEND=1
-    flag_entry "skill" "fastify-trpc-service" "@neolinkrnd/fastify-bundle-*"
-    flag_entry "skill" "fastify-plugin"       "@neolinkrnd/fastify-bundle-*"
+    flag_entry "skill" "neolink-fastify-gateway-generator" "@neolinkrnd/fastify-bundle-*"
+    flag_entry "skill" "neolink-gateway-setup"             "@neolinkrnd/fastify-bundle-*"
   fi
   if [ "$IS_BACKEND" -eq 1 ]; then
-    have_dep_literal "@trpc/server"      && flag_entry "skill" "fastify-trpc-service" "@trpc/server"
-    have_dep_literal "@sinclair/typemap" && flag_entry "skill" "fastify-trpc-service" "@sinclair/typemap"
-    have_dep_literal "@nx/node"          && flag_entry "skill" "fastify-trpc-service" "@nx/node"
+    have_dep_literal "@trpc/server"      && flag_entry "skill" "api-spec-generator"                "@trpc/server"
+    have_dep_literal "@sinclair/typemap" && flag_entry "skill" "neolink-fastify-gateway-generator" "@sinclair/typemap"
+    have_dep_literal "@nx/node"          && flag_entry "skill" "neolink-fastify-gateway-generator" "@nx/node"
     flag_entry "agent" "backend-implementer" "backend detected"
   fi
 
-  # ---- Frontend: Angular 19 ------------------------------------------------
+  # ---- Frontend: Angular 21 + NX -------------------------------------------
   IS_FRONTEND=0
   if have_dep_literal "@angular/core" || has_file "angular.json"; then
     IS_FRONTEND=1
-    flag_entry "skill" "angular-19-component" "@angular/core"
-    flag_entry "skill" "nx-angular-library"   "@angular/core"
+    flag_entry "skill" "angular-nx-architect" "@angular/core"
+    flag_entry "skill" "angular-unit-test"    "@angular/core"
   fi
   if have_dep_literal "@nx/angular"; then
     IS_FRONTEND=1
-    flag_entry "skill" "nx-angular-library" "@nx/angular"
+    flag_entry "skill" "angular-nx-architect" "@nx/angular"
   fi
   if [ "$IS_FRONTEND" -eq 1 ]; then
-    have_dep_literal "@angular/material"         && flag_entry "skill" "angular-19-component" "@angular/material"
-    have_dep_literal "tailwindcss"               && flag_entry "skill" "angular-19-component" "tailwindcss"
-    has_file_glob "tailwind.config.*"            && flag_entry "skill" "angular-19-component" "tailwind.config"
-    have_dep_literal "@analogjs/vitest-angular"  && flag_entry "skill" "angular-19-component" "@analogjs/vitest-angular"
-    has_file_glob "vitest.config.*"              && flag_entry "skill" "angular-19-component" "vitest.config"
-    has_file_glob "playwright.config.*"          && flag_entry "skill" "angular-19-component" "playwright.config"
+    have_dep_literal "@angular/material"         && flag_entry "skill" "angular-nx-architect" "@angular/material"
+    have_dep_literal "tailwindcss"               && flag_entry "skill" "angular-nx-architect" "tailwindcss"
+    has_file_glob "tailwind.config.*"            && flag_entry "skill" "angular-nx-architect" "tailwind.config"
+    have_dep_literal "vitest"                    && flag_entry "skill" "angular-unit-test"    "vitest"
+    has_file_glob "vitest.config.*"              && flag_entry "skill" "angular-unit-test"    "vitest.config"
+    has_file_glob "playwright.config.*"          && flag_entry "skill" "angular-unit-test"    "playwright.config"
+
+    # Neolink portal repos only — angular-neolink-template is specific to
+    # apps/portal-example, portal-neolink, portal-hive.
+    PKG_NAME="$(sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$PKG_JSON" 2>/dev/null | head -1)"
+    case "$PKG_NAME" in
+      *portal*|*neolink*) flag_entry "skill" "angular-neolink-template" "portal/neolink package name" ;;
+    esac
+    if has_file_glob "apps/portal-*"; then
+      flag_entry "skill" "angular-neolink-template" "apps/portal-* present"
+    fi
+
     flag_entry "agent" "frontend-implementer" "frontend detected"
   fi
 
-  # ---- Shared: Zod ---------------------------------------------------------
+  # ---- Shared: Zod (still valid; no replacement among the new skills) ------
   if have_dep_literal "zod";              then flag_entry "skill" "zod-schema" "zod"; fi
   if have_dep_literal "@sinclair/typemap"; then flag_entry "skill" "zod-schema" "@sinclair/typemap"; fi
 
@@ -279,10 +291,11 @@ if [ "$NO_SUGGEST" -eq 0 ] && [ "$FORCE_ALL" -eq 0 ]; then
   fi
   [ "$IS_DEVOPS" -eq 1 ] && flag_entry "agent" "deploy-captain" "deploy markers"
 
-  # ---- Full-stack monorepo: shared schemas + agent-teams skill -------------
+  # ---- Full-stack monorepo: shared schemas + agent-teams + team-lead ------
   if [ "$IS_BACKEND" -eq 1 ] && [ "$IS_FRONTEND" -eq 1 ]; then
     flag_entry "agent" "schema-owner"  "full-stack monorepo"
     flag_entry "skill" "agent-teams"   "full-stack monorepo"
+    flag_entry "skill" "team-lead"     "agent-teams enabled"
   fi
 
   # ---- Project settings: preselect only if no settings.json exists yet -----

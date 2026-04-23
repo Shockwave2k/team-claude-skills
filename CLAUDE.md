@@ -10,8 +10,8 @@ Shared Claude Code presets for the Neolink team: skills, subagents, slash comman
 
 Skills here should assume and reinforce this stack. If a user asks for something outside it, ask before encoding a new opinion.
 
-- **Backend** — NX monorepo, Fastify 5 (`@fastify/autoload`, `@fastify/sensible`, `fastify-plugin`), tRPC v11, Zod validated via `@sinclair/typemap` at Fastify boundaries, Mongoose (MongoDB) and `mssql` (SQL Server), secrets via `node-vault`. House bundles: `@neolinkrnd/fastify-bundle-{default-controller,error-handler,schema-builder,status-code}` — prefer these over hand-rolled equivalents. Tests: Jest + `@swc-node/register`.
-- **Frontend** — NX monorepo, Angular 19 (standalone components, signals, `@if`/`@for`/`@switch`, `inject()`, OnPush), Angular Material + CDK, Tailwind 3 with `prettier-plugin-tailwindcss`. tRPC v11 client imports `AppRouter` as a type only. Tests: Vitest via `@analogjs/vitest-angular`, Playwright for E2E.
+- **Backend** — NX monorepo, Fastify gateway pattern with `@fastify/autoload`, `fastify-plugin`, tRPC, Zod via `@sinclair/typemap` at Fastify boundaries. The Neolink gateway-service generator produces controller + route boilerplate; observability (structured logs, Prometheus metrics, request tracing) is layered by `neolink-gateway-setup`. OpenAPI + Bruno collections by `api-spec-generator`. House bundles: `@neolinkrnd/fastify-bundle-*`.
+- **Frontend** — NX monorepo, Angular 21 (standalone components, signals, `@if`/`@for`/`@switch`, `inject()`, OnPush), Angular Material 3 + CDK, Tailwind with `prettier-plugin-tailwindcss`. tRPC client imports `AppRouter` as a type only. Tests: Vitest. App-first layout (`data-access`, `feat-*`, `ui-*`, `util` inside each app) — not the classic NX library-per-concern split. The portal-* repos (`portal-example`, `portal-neolink`, `portal-hive`) have additional Material 3 showcase conventions.
 - **Platform** — Kubernetes on Digital Ocean (DOKS). ArgoCD watches a separate manifests repo; deploys happen by committing image-tag bumps to that repo. Never `kubectl apply` — ArgoCD reverts drift.
 
 ## Layout
@@ -27,14 +27,31 @@ Skills here should assume and reinforce this stack. If a user asks for something
 
 ## Skills that already exist (don't duplicate, prefer editing)
 
-- `backend/fastify-trpc-service` — Fastify routes + tRPC procedures, autoload layout, typemap, house bundles.
-- `backend/fastify-plugin` — when to wrap with `fastify-plugin`, decorator typing, dep ordering.
-- `frontend/angular-19-component` — standalone / signals / new control flow / Material + Tailwind rules.
-- `frontend/nx-angular-library` — library types (feature/ui/data-access/util), scope tags, boundary rules.
+Backend:
+- `backend/neolink-fastify-gateway-generator` — scaffolds Fastify gateway controllers + route registration for `neolink-logistic` gateway-service.
+- `backend/neolink-gateway-setup` — production observability for API gateways: structured logging with request-body capture, Prometheus metrics, request tracing, enhanced errors.
+- `backend/api-spec-generator` — detects API changes and generates/updates OpenAPI 3.0+ specs and Bruno collections (tRPC / REST / GraphQL).
+
+Frontend:
+- `frontend/angular-nx-architect` — app-first NX Angular 21 structure: `data-access`, `feat-*`, `ui-*`, `util` folders inside each app.
+- `frontend/angular-neolink-template` — Material 3 showcase conventions specific to `portal-example`, `portal-neolink`, `portal-hive`. Triggers on paths under `apps/portal-*/src/app/pages/mat3/`.
+- `frontend/angular-unit-test` — Angular 21 unit tests with Vitest (jsdom). TestBed, ComponentFixture, mocking patterns.
+
+Shared:
 - `shared/zod-schema` — schema location, input vs output, strictness, Zod→JSON Schema via typemap.
 - `shared/agent-teams` — when to spawn an agent team, which subagents to use as teammates, canonical spawn prompts.
+- `shared/team-lead` — runtime conventions for the session that IS the team lead (how to spawn, wait, synthesize, clean up).
+- `shared/code-memory-updater` — records patterns, conventions, architectural decisions into `CLAUDE.md` after significant changes.
+- `shared/consolidate-memory` — reflective pass over auto-memory: merge duplicates, fix stale facts, prune the index.
+- `shared/skill-creator` — create, edit, eval, and benchmark skills (ships with `analyzer`, `comparator`, `grader` sub-agents + Python eval scripts).
+- `shared/schedule` — create a reusable self-contained prompt that runs on demand or on an interval.
+- `shared/setup-cowork` — guided Cowork setup flow (role → plugin → skill → connectors).
+
+DevOps:
 - `devops/argocd-k8s-deploy` — GitOps flow, image-tag bump, promotion, rollback, no-`kubectl-apply` rule.
-- `skills/example-skill/` — placeholder reference. Do not delete.
+
+Document formats (user-triggered, not preselected by stack detection):
+- `docs/docx`, `docs/pdf`, `docs/pptx`, `docs/xlsx` — Anthropic-provided skills for creating/editing Office files. Each ships with Python scripts and an Anthropic `LICENSE.txt` — preserve the license file as-is.
 
 ## Subagents that already exist (don't duplicate, prefer editing)
 
@@ -52,6 +69,19 @@ Every subagent here is installable as a plain subagent AND usable as a teammate 
 - `settings/agent-teams.json` — just the agent teams env flag, for teams that manage memory differently.
 
 Do not write settings to `~/.claude/settings.json` from the installer — user-scope settings belong to the user, not the team presets.
+
+## Where does the "team lead" live?
+
+Agent Teams have no dedicated lead subagent — the lead is the Claude Code session the user started in their terminal. What lives in this repo is the **conventions the lead follows**, which are in `skills/shared/team-lead/SKILL.md`. It's a regular skill, auto-loaded when relevant. The installer flags it for full-stack targets (same trigger as `agent-teams`), so any project that gets the agent-teams skill also gets the team-lead skill.
+
+Do not create `agents/shared/team-lead.md`. Spawning the lead as a teammate contradicts the Claude Code model.
+
+## `tools/` — auxiliary tools shipped with this repo
+
+- `tools/skill-manager/` — local browser UI for managing per-project installations. Zero npm deps, stock Node 18+. When the install semantics in `install-project.sh` change (new detection signal, new kind of entry), update the Node app's equivalent logic in `tools/skill-manager/server.js` — the two must stay in sync.
+- Known divergence: the web UI offers **independent** `agent teams` and `auto memory` settings toggles and **merges** them into any existing `settings.json` (only the two keys we own are touched; others preserved; toggling both off deletes the file). `install-project.sh --with-settings` still writes the combined `settings/recommended.json` fragment in one shot and skips if the file already exists. The shell flag is coarse by design (one-shot CLI use); the web UI is granular because it's interactive. Don't try to unify them — if a CLI user wants independent control today, they edit `.claude/settings.json` by hand.
+- API surface worth remembering when editing the server: `GET /api/catalog`, `GET /api/projects`, `POST /api/projects`, `DELETE /api/projects/:i`, `GET /api/projects/:i/status`, `POST /api/projects/:i/apply` (body `{ skills, agents, settings: { agentTeams, autoMemory } }`), `GET /api/fs?path=…` (browse; hides dotfiles; returns `projectLike` hint per subdir).
+- Any future tool goes under `tools/<name>/`. Keep each tool self-contained; do not cross-import between tools.
 
 ## Adding a skill
 
@@ -91,6 +121,7 @@ Do not write settings to `~/.claude/settings.json` from the installer — user-s
 - `install-project.sh` is interactive by default, non-interactive with `--yes` / `--all` / `--skill=` / `--agent=` / `--with-settings`. Detection reads only from `$TARGET_PATH` — never from this repo, never from `~`.
 - Entry types managed by a single array family (`ENTRY_KIND`, `ENTRY_NAME`, `ENTRY_SRC`, `ENTRY_CATEGORY`, `ENTRY_SELECTED`, `ENTRY_DETECTED`). `ENTRY_KIND` is `skill` | `agent` | `settings`. Adding new entries means appending to the arrays during discovery.
 - When you add a new skill or agent that maps to a detectable signal, extend the detection block (search for the `if [ "$NO_SUGGEST" -eq 0 ]` guard) with a new `flag_entry <kind> <name> <reason>` call. Do not duplicate helpers — use `have_dep_literal`, `have_dep_prefix`, `has_file`, `has_dir`, `has_file_glob`.
+- **Mirror detection changes in `tools/skill-manager/server.js`** (the `detectStack` function). It's intentionally a hand-maintained parallel implementation — there's no shared source of truth. When you add a new signal, add it in both places and verify with `node -c tools/skill-manager/server.js` plus a quick curl-driven end-to-end.
 - `set -e` footgun: functions that end on a `&& <cmd>` chain where the test can fail will cause the script to exit when called from a `then` body. Always end helpers with an explicit `return 0`. `flag_entry` and `force_select` already follow this pattern — keep it.
 - The settings pseudo-entry is special: it never symlinks. It writes `settings/recommended.json` to `<target>/.claude/settings.json` only if that file doesn't exist. Do not add logic that mutates an existing `settings.json` without the user's explicit ask — JSON merge in bash is unsafe.
 
