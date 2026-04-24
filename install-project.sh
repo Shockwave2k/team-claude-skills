@@ -317,11 +317,12 @@ if [ "$NO_SUGGEST" -eq 0 ] && [ "$FORCE_ALL" -eq 0 ]; then
     flag_entry "skill" "team-lead"     "agent-teams enabled"
   fi
 
-  # ---- Project brain: codebase-scan + feature-outcome for any stack -------
+  # ---- Project brain: codebase-scan + feature-outcome + expert generator --
   if [ "$IS_BACKEND" -eq 1 ] || [ "$IS_FRONTEND" -eq 1 ]; then
-    flag_entry "skill"   "codebase-scan"   "stack detected"
-    flag_entry "skill"   "feature-outcome" "stack detected"
-    flag_entry "command" "feature"         "stack detected"
+    flag_entry "skill"   "codebase-scan"             "stack detected"
+    flag_entry "skill"   "feature-outcome"           "stack detected"
+    flag_entry "skill"   "project-expert-generator"  "stack detected"
+    flag_entry "command" "feature"                   "stack detected"
   fi
 
   # ---- Project settings: preselect only if no settings.json exists yet -----

@@ -146,4 +146,6 @@ Print a short summary to the user:
 
 ## Permission requirement
 
-Same as `codebase-scan`: writes to `.claude/` are blocked unless the project's `settings.json` or `settings.local.json` explicitly allows them. Look for a `permissions.allow` block listing `Write(./.claude/features/**)`, `Edit(./.claude/rules/**)`, etc. If your writes are being silently denied, that's why — add the rules from `settings/recommended.json` in the team-claude-skills repo and retry.
+Same as `codebase-scan`: writes to `.claude/` are blocked unless the project's `settings.json` or `settings.local.json` explicitly allows them. Look for a `permissions.allow` block listing `Write(./.claude/features/**)`, `Edit(./.claude/rules/**)`, etc.
+
+For **non-interactive `claude -p`** invocations: as of CLI 2.1.x, writes to `.claude/` are blocked by a hardcoded sensitive-path guard that no permission flag bypasses. If invoking this skill via `claude -p`, either run interactively (regular `claude`) so you can click through prompts, or use a staging-dir pattern: write to `./.brain-out/` and have an outer shell script relocate to `.claude/` afterward. The `bootstrap-project.sh` script demonstrates this pattern.

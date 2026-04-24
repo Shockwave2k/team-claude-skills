@@ -10,7 +10,11 @@
       "Write(./.claude/rules/**)",
       "Edit(./.claude/rules/**)",
       "Write(./.claude/features/**)",
-      "Edit(./.claude/features/**)"
+      "Edit(./.claude/features/**)",
+      "Write(./.claude/skills/**)",
+      "Edit(./.claude/skills/**)",
+      "Write(./.claude/agents/**)",
+      "Edit(./.claude/agents/**)"
     ]
   }
 }

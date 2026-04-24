@@ -216,9 +216,10 @@ function detectStack(projectPath) {
 
   // --- Project brain + /feature workflow for any stack ---
   if (isBackend || isFrontend) {
-    flag('skills',   'codebase-scan',   'stack detected');
-    flag('skills',   'feature-outcome', 'stack detected');
-    flag('commands', 'feature',         'stack detected');
+    flag('skills',   'codebase-scan',            'stack detected');
+    flag('skills',   'feature-outcome',          'stack detected');
+    flag('skills',   'project-expert-generator', 'stack detected');
+    flag('commands', 'feature',                  'stack detected');
   }
 
   // --- Settings (independent toggles) ---
