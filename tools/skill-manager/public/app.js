@@ -1,7 +1,7 @@
 // skill-manager client. No framework; direct DOM.
 
 let projects = [];
-let catalog = { skills: [], agents: [] };
+let catalog = { skills: [], agents: [], commands: [] };
 let currentIdx = null;
 let status = null;
 
@@ -292,6 +292,20 @@ function renderMain() {
   aSec.appendChild(renderCategories('agent', catalog.agents, detected.agents, installed.agents));
   $main.appendChild(aSec);
 
+  // Commands (slash commands). Preselected if the detector flags them (e.g.
+  // /feature for any project with a detected stack). Otherwise available
+  // but unchecked.
+  if (catalog.commands && catalog.commands.length) {
+    const cSec = document.createElement('div'); cSec.className = 'section';
+    const cH = document.createElement('h3'); cH.textContent = 'Slash commands';
+    const cCount = document.createElement('span'); cCount.className = 'count';
+    const detectedCmds = detected.commands || {};
+    cCount.textContent = `${Object.keys(detectedCmds).length} detected / ${catalog.commands.length} available`;
+    cH.appendChild(cCount); cSec.appendChild(cH);
+    cSec.appendChild(renderCategories('command', catalog.commands, detectedCmds, installed.commands));
+    $main.appendChild(cSec);
+  }
+
   // Project settings — toggles are always editable. Apply merges into any
   // existing settings.json, preserving keys the manager doesn't own.
   const setSec = document.createElement('div'); setSec.className = 'section';
@@ -377,9 +391,10 @@ function updateSummary(el) {
   const installedSet = new Set([
     ...status.installed.skills.map((s) => `skill:${s}`),
     ...status.installed.agents.map((a) => `agent:${a}`),
+    ...(status.installed.commands || []).map((c) => `command:${c}`),
   ]);
   const desired = new Set();
-  document.querySelectorAll('input[name^="skill:"]:checked, input[name^="agent:"]:checked').forEach((b) => desired.add(b.name));
+  document.querySelectorAll('input[name^="skill:"]:checked, input[name^="agent:"]:checked, input[name^="command:"]:checked').forEach((b) => desired.add(b.name));
   let adds = 0, drops = 0;
   desired.forEach((d) => { if (!installedSet.has(d)) adds++; });
   installedSet.forEach((i) => { if (!desired.has(i)) drops++; });
@@ -399,8 +414,9 @@ function updateSummary(el) {
 // ---------- apply ----------
 
 async function applyChanges() {
-  const skills = Array.from(document.querySelectorAll('input[name^="skill:"]:checked')).map((b) => b.name.slice('skill:'.length));
-  const agents = Array.from(document.querySelectorAll('input[name^="agent:"]:checked')).map((b) => b.name.slice('agent:'.length));
+  const skills   = Array.from(document.querySelectorAll('input[name^="skill:"]:checked')).map((b) => b.name.slice('skill:'.length));
+  const agents   = Array.from(document.querySelectorAll('input[name^="agent:"]:checked')).map((b) => b.name.slice('agent:'.length));
+  const commands = Array.from(document.querySelectorAll('input[name^="command:"]:checked')).map((b) => b.name.slice('command:'.length));
   const agentTeamsBox = document.getElementById('setting:agentTeams');
   const autoMemoryBox = document.getElementById('setting:autoMemory');
   const settings = {
@@ -411,7 +427,7 @@ async function applyChanges() {
   const res = await fetch(`/api/projects/${currentIdx}/apply`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ skills, agents, settings }),
+    body: JSON.stringify({ skills, agents, commands, settings }),
   });
   const result = await res.json();
 

@@ -1,6 +1,6 @@
 ---
 name: consolidate-memory
-description: "Reflective pass over your memory files — merge duplicates, fix stale facts, prune the index."
+description: "Use this skill to do a reflective pass over Claude's auto-memory files — merge duplicates, fix stale facts, prune the MEMORY.md index. Trigger on phrases like 'consolidate memory', 'clean up memory', 'merge duplicates in memory', 'refresh Claude's notes', 'what does Claude remember', 'audit memory', or when auto-memory feels noisy, contradictory, or bloated. Run periodically as housekeeping; not on every routine task."
 ---
 
 # Memory Consolidation

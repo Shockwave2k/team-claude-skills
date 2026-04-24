@@ -56,6 +56,7 @@ NO_SUGGEST=0
 FORCE_SETTINGS=0
 FORCE_SKILLS=()
 FORCE_AGENTS=()
+FORCE_COMMANDS=()
 
 for arg in "$@"; do
   case "$arg" in
@@ -67,6 +68,7 @@ for arg in "$@"; do
     --with-settings)  FORCE_SETTINGS=1 ;;
     --skill=*)        FORCE_SKILLS+=("${arg#--skill=}") ;;
     --agent=*)        FORCE_AGENTS+=("${arg#--agent=}") ;;
+    --command=*)      FORCE_COMMANDS+=("${arg#--command=}") ;;
     -*)               echo "install-project.sh: unknown flag '$arg'" >&2; usage >&2; exit 1 ;;
     *)
       if [ -n "$TARGET_PATH" ]; then
@@ -135,6 +137,23 @@ while IFS= read -r agent_md; do
   ENTRY_DETECTED+=("")
 done <<EOF
 $(find "$SOURCE_DIR/agents" -type f -name "*.md" ! -iname "README.md" 2>/dev/null | sort)
+EOF
+
+# Commands: *.md under commands/ (excluding README.md) → become slash commands
+while IFS= read -r cmd_md; do
+  [ -z "$cmd_md" ] && continue
+  name="$(basename "$cmd_md" .md)"
+  cat_dir="$(dirname "$cmd_md")"
+  category="$(basename "$cat_dir")"
+  [ "$category" = "commands" ] && category="misc"
+  ENTRY_KIND+=("command")
+  ENTRY_NAME+=("$name")
+  ENTRY_SRC+=("$cmd_md")
+  ENTRY_CATEGORY+=("$category")
+  ENTRY_SELECTED+=(0)
+  ENTRY_DETECTED+=("")
+done <<EOF
+$(find "$SOURCE_DIR/commands" -type f -name "*.md" ! -iname "README.md" 2>/dev/null | sort)
 EOF
 
 # Settings pseudo-entry (always last)
@@ -298,17 +317,24 @@ if [ "$NO_SUGGEST" -eq 0 ] && [ "$FORCE_ALL" -eq 0 ]; then
     flag_entry "skill" "team-lead"     "agent-teams enabled"
   fi
 
+  # ---- Project brain: codebase-scan + feature-outcome for any stack -------
+  if [ "$IS_BACKEND" -eq 1 ] || [ "$IS_FRONTEND" -eq 1 ]; then
+    flag_entry "skill"   "codebase-scan"   "stack detected"
+    flag_entry "skill"   "feature-outcome" "stack detected"
+    flag_entry "command" "feature"         "stack detected"
+  fi
+
   # ---- Project settings: preselect only if no settings.json exists yet -----
   if [ ! -f "$TARGET_PATH/.claude/settings.json" ]; then
     flag_entry "settings" "enable agent teams + auto memory" "no existing settings.json"
   fi
 fi
 
-# --all forces every skill + agent (but NOT settings — that can clobber existing config)
+# --all forces every skill + agent + command (NOT settings — that can clobber existing config)
 if [ "$FORCE_ALL" -eq 1 ]; then
   for i in $(seq 0 $((N - 1))); do
     case "${ENTRY_KIND[$i]}" in
-      skill|agent) ENTRY_SELECTED[$i]=1 ;;
+      skill|agent|command) ENTRY_SELECTED[$i]=1 ;;
     esac
   done
 fi
@@ -336,6 +362,9 @@ fi
 if [ "${#FORCE_AGENTS[@]}" -gt 0 ]; then
   for a in "${FORCE_AGENTS[@]}"; do force_select "agent" "$a"; done
 fi
+if [ "${#FORCE_COMMANDS[@]}" -gt 0 ]; then
+  for c in "${FORCE_COMMANDS[@]}"; do force_select "command" "$c"; done
+fi
 if [ "$FORCE_SETTINGS" -eq 1 ]; then
   force_select "settings" "enable agent teams + auto memory"
 fi
@@ -356,6 +385,7 @@ render_menu() {
       case "$k" in
         skill)    echo "Skills:" ;;
         agent)    echo; echo "Agents (subagents; also usable as agent-team teammates):" ;;
+        command)  echo; echo "Slash commands:" ;;
         settings) echo; echo "Project settings:" ;;
       esac
       last_kind="$k"
@@ -428,7 +458,7 @@ fi
 
 # --- install ------------------------------------------------------------------
 
-mkdir -p "$TARGET_PATH/.claude/skills" "$TARGET_PATH/.claude/agents"
+mkdir -p "$TARGET_PATH/.claude/skills" "$TARGET_PATH/.claude/agents" "$TARGET_PATH/.claude/commands"
 
 install_path() {
   # $1 = source (file or dir), $2 = destination
@@ -443,6 +473,7 @@ install_path() {
 
 skills_installed=0
 agents_installed=0
+commands_installed=0
 settings_result=""
 installed_lines=""
 
@@ -452,13 +483,19 @@ for i in $(seq 0 $((N - 1))); do
     skill)
       install_path "${ENTRY_SRC[$i]}" "$TARGET_PATH/.claude/skills/${ENTRY_NAME[$i]}"
       skills_installed=$((skills_installed + 1))
-      installed_lines="${installed_lines}  skill  ${ENTRY_NAME[$i]}
+      installed_lines="${installed_lines}  skill    ${ENTRY_NAME[$i]}
 "
       ;;
     agent)
       install_path "${ENTRY_SRC[$i]}" "$TARGET_PATH/.claude/agents/${ENTRY_NAME[$i]}.md"
       agents_installed=$((agents_installed + 1))
-      installed_lines="${installed_lines}  agent  ${ENTRY_NAME[$i]}
+      installed_lines="${installed_lines}  agent    ${ENTRY_NAME[$i]}
+"
+      ;;
+    command)
+      install_path "${ENTRY_SRC[$i]}" "$TARGET_PATH/.claude/commands/${ENTRY_NAME[$i]}.md"
+      commands_installed=$((commands_installed + 1))
+      installed_lines="${installed_lines}  command  /${ENTRY_NAME[$i]}
 "
       ;;
     settings)
@@ -473,7 +510,7 @@ for i in $(seq 0 $((N - 1))); do
   esac
 done
 
-total=$((skills_installed + agents_installed))
+total=$((skills_installed + agents_installed + commands_installed))
 echo
 if [ "$total" -eq 0 ] && [ -z "$settings_result" ]; then
   echo "Nothing selected. No changes made."
@@ -481,8 +518,9 @@ if [ "$total" -eq 0 ] && [ -z "$settings_result" ]; then
 fi
 
 echo "Installed into $TARGET_PATH/.claude (mode: $MODE):"
-echo "  skills: $skills_installed"
-echo "  agents: $agents_installed"
+echo "  skills:   $skills_installed"
+echo "  agents:   $agents_installed"
+echo "  commands: $commands_installed"
 if [ -n "$settings_result" ]; then
   echo "  settings: $settings_result"
 fi

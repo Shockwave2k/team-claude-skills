@@ -41,6 +41,8 @@ Shared:
 - `shared/zod-schema` — schema location, input vs output, strictness, Zod→JSON Schema via typemap.
 - `shared/agent-teams` — when to spawn an agent team, which subagents to use as teammates, canonical spawn prompts.
 - `shared/team-lead` — runtime conventions for the session that IS the team lead (how to spawn, wait, synthesize, clean up).
+- `shared/codebase-scan` — one-shot scan of an existing project to build the layered brain (`.claude/CLAUDE.md` + path-scoped `.claude/rules/<module>.md`). Run once per project; re-run after big restructures.
+- `shared/feature-outcome` — Phase 3 of `/feature`. Diffs the branch, writes `.claude/features/<slug>/outcome.md`, patches the affected `.claude/rules/*.md` files so the brain reflects new public APIs, schemas, and connection points.
 - `shared/code-memory-updater` — records patterns, conventions, architectural decisions into `CLAUDE.md` after significant changes.
 - `shared/consolidate-memory` — reflective pass over auto-memory: merge duplicates, fix stale facts, prune the index.
 - `shared/skill-creator` — create, edit, eval, and benchmark skills (ships with `analyzer`, `comparator`, `grader` sub-agents + Python eval scripts).
@@ -57,11 +59,15 @@ Document formats (user-triggered, not preselected by stack detection):
 
 Every subagent here is installable as a plain subagent AND usable as a teammate in an agent team.
 
-- `agents/backend/backend-implementer.md` — hands-on Fastify + tRPC implementer.
-- `agents/frontend/frontend-implementer.md` — hands-on Angular 19 implementer.
+- `agents/backend/backend-implementer.md` — hands-on Fastify + tRPC implementer (generalist, coordinates well in agent teams).
+- `agents/backend/neolink-backend-expert.md` — deep specialist for the `neolink-logistic` Nx monorepo (gateway-service, shipment-service, option-service, iam-service, MSSQL/Cassandra repos, Kafka, Redis). Uses `opus`. Invoke for hard problems in that codebase.
+- `agents/frontend/frontend-implementer.md` — hands-on Angular 21 implementer (generalist).
+- `agents/frontend/angular-21-expert.md` — Angular 21 specialist (signals, Material 3 theming, Nx feature modules, NG0600 debugging, SSR/hydration). Uses `opus`. Invoke for hard problems.
 - `agents/shared/schema-owner.md` — owns shared Zod schemas under `libs/shared/*/util/schemas/`.
 - `agents/shared/reviewer.md` — PR reviewer; gets assigned a lens at spawn (security, performance, coverage, conventions, deploy-safety).
 - `agents/devops/deploy-captain.md` — deploy / promote / rollback through the ArgoCD flow; never imperatively mutates the cluster.
+
+**Generalist vs expert**: the `*-implementer` agents are for routine work and agent-team teammates (sonnet, lean bodies). The `*-expert` agents are deeper, opus-backed specialists — reach for them when you're stuck or when a task needs deep internal knowledge of the specific codebase.
 
 ## Settings fragments
 
@@ -69,6 +75,28 @@ Every subagent here is installable as a plain subagent AND usable as a teammate 
 - `settings/agent-teams.json` — just the agent teams env flag, for teams that manage memory differently.
 
 Do not write settings to `~/.claude/settings.json` from the installer — user-scope settings belong to the user, not the team presets.
+
+## Per-project "brain" — where it lives
+
+The layered project brain (`<project>/.claude/CLAUDE.md`, `.claude/rules/*.md`, `.claude/features/<slug>/{spec,outcome}.md`) lives **inside each target project**, not in this repo. Two reasons:
+
+1. Claude Code's path-scoped rules only load from the project's own `.claude/rules/`. Storing them anywhere else breaks the auto-load-on-path mechanism.
+2. Brain-and-code in one commit keeps drift manageable — the shipment-service brain update ships in the same PR as the shipment-service Kafka topic.
+
+What lives in this repo: the **tools** (`codebase-scan` + `feature-outcome` skills, the `/feature` command's Phase 3 wiring). What lives in each target project: the **brain those tools produce**.
+
+After running `codebase-scan` on a target project, the user needs to carve the brain out of `.claude/`'s gitignore so it gets committed. Template gitignore snippet to give them:
+
+    # keep ignored (installer output + personal)
+    .claude/skills/
+    .claude/agents/
+    .claude/commands/
+    .claude/settings.local.json
+    # commit these (shared team knowledge)
+    !.claude/CLAUDE.md
+    !.claude/rules/
+    !.claude/features/
+    !.claude/settings.json
 
 ## Where does the "team lead" live?
 

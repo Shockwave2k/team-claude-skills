@@ -218,14 +218,14 @@ When a project imports from this repo, its `CLAUDE.md` should be short and addit
 
 - Backend: `neolink-fastify-gateway-generator`, `neolink-gateway-setup`, `api-spec-generator`
 - Frontend: `angular-nx-architect`, `angular-neolink-template` (portal repos only), `angular-unit-test`
-- Shared: `zod-schema`, `agent-teams`, `team-lead`, `code-memory-updater`, `consolidate-memory`, `skill-creator`, `schedule`, `setup-cowork`
+- Shared: `zod-schema`, `agent-teams`, `team-lead`, `codebase-scan`, `feature-outcome`, `code-memory-updater`, `consolidate-memory`, `skill-creator`, `schedule`, `setup-cowork`
 - DevOps: `argocd-k8s-deploy`
 - Document formats: `docs/docx`, `docs/pdf`, `docs/pptx`, `docs/xlsx` (user-triggered; not preselected by stack detection)
 
 **Subagents** (delegatable workers; also usable as agent-team teammates):
 
-- Backend: `backend-implementer`
-- Frontend: `frontend-implementer`
+- Backend: `backend-implementer` (generalist), `neolink-backend-expert` (opus; `neolink-logistic` deep specialist)
+- Frontend: `frontend-implementer` (generalist), `angular-21-expert` (opus; Angular 21 / Material 3 deep specialist)
 - Shared: `schema-owner`, `reviewer`
 - DevOps: `deploy-captain`
 

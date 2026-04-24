@@ -1,6 +1,6 @@
 ---
 name: setup-cowork
-description: "Guided Cowork setup — install a matching plugin, try a skill, connect tools."
+description: "Use this skill when the user wants to get Cowork configured — pick a role, install a matching plugin, try a first skill, connect tools. Trigger on phrases like 'set up Cowork', 'onboard to Cowork', 'configure Cowork', 'help me get started with Cowork', 'install a Cowork plugin', or on first-run Cowork onboarding. Walks through role → plugin → skill → connectors in that order."
 ---
 
 # Setup Cowork

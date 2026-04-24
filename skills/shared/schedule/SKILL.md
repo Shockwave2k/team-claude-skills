@@ -1,6 +1,6 @@
 ---
 name: schedule
-description: "Create a scheduled task that can be run on demand or automatically on an interval."
+description: "Use this skill when the user wants to turn the current session's work into a reusable scheduled task — something that runs on demand or on a recurring interval. Trigger on phrases like 'schedule this', 'make this recurring', 'run this every day', 'set up a cron', 'create a routine', 'turn this into a scheduled task', 'automate this daily'. The resulting task must be self-contained: it runs without access to the current conversation, so never references 'the above' or ephemeral session context."
 ---
 
 You are creating a reusable shortcut from the current session. Follow these steps:

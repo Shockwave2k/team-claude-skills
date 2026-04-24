@@ -82,16 +82,36 @@ function listCatalog() {
     }
   }
 
+  const commands = [];
+  const commandsDir = path.join(ROOT, 'commands');
+  try {
+    for (const category of fs.readdirSync(commandsDir)) {
+      const catPath = path.join(commandsDir, category);
+      if (!fs.statSync(catPath).isDirectory()) continue;
+      for (const file of fs.readdirSync(catPath)) {
+        if (!file.endsWith('.md') || file.toLowerCase() === 'readme.md') continue;
+        const cmdFile = path.join(catPath, file);
+        commands.push({
+          name: path.basename(file, '.md'),
+          category,
+          source: cmdFile,
+          description: readFrontmatter(cmdFile, 'description'),
+        });
+      }
+    }
+  } catch { /* no commands dir */ }
+
   skills.sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
   agents.sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
+  commands.sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
 
-  return { skills, agents };
+  return { skills, agents, commands };
 }
 
 // --- stack detection (mirrors install-project.sh rules) ---------------------
 
 function detectStack(projectPath) {
-  const hits = { skills: {}, agents: {}, settings: {} };
+  const hits = { skills: {}, agents: {}, commands: {}, settings: {} };
   const flag = (bucket, name, reason) => {
     const m = hits[bucket];
     if (!m[name]) m[name] = [];
@@ -194,6 +214,13 @@ function detectStack(projectPath) {
     flag('skills', 'team-lead',    'agent-teams enabled');
   }
 
+  // --- Project brain + /feature workflow for any stack ---
+  if (isBackend || isFrontend) {
+    flag('skills',   'codebase-scan',   'stack detected');
+    flag('skills',   'feature-outcome', 'stack detected');
+    flag('commands', 'feature',         'stack detected');
+  }
+
   // --- Settings (independent toggles) ---
   // Preselect if no existing settings.json; if one exists, UI will disable
   // the toggles and reflect parsed state instead.
@@ -211,14 +238,21 @@ function currentlyInstalled(projectPath) {
   const installed = {
     skills: [],
     agents: [],
+    commands: [],
     hasSettings: false,
     settings: { agentTeams: false, autoMemory: false },
   };
   const skillsDir = path.join(projectPath, '.claude', 'skills');
   const agentsDir = path.join(projectPath, '.claude', 'agents');
+  const commandsDir = path.join(projectPath, '.claude', 'commands');
   try { installed.skills = fs.readdirSync(skillsDir); } catch {}
   try {
     installed.agents = fs.readdirSync(agentsDir)
+      .filter(f => f.endsWith('.md'))
+      .map(f => f.replace(/\.md$/, ''));
+  } catch {}
+  try {
+    installed.commands = fs.readdirSync(commandsDir)
       .filter(f => f.endsWith('.md'))
       .map(f => f.replace(/\.md$/, ''));
   } catch {}
@@ -238,17 +272,20 @@ function currentlyInstalled(projectPath) {
 
 function applyInstall(projectPath, plan) {
   const claudeDir = path.join(projectPath, '.claude');
-  fs.mkdirSync(path.join(claudeDir, 'skills'), { recursive: true });
-  fs.mkdirSync(path.join(claudeDir, 'agents'), { recursive: true });
+  fs.mkdirSync(path.join(claudeDir, 'skills'),   { recursive: true });
+  fs.mkdirSync(path.join(claudeDir, 'agents'),   { recursive: true });
+  fs.mkdirSync(path.join(claudeDir, 'commands'), { recursive: true });
 
   const catalog = listCatalog();
-  const skillMap = Object.fromEntries(catalog.skills.map(s => [s.name, s]));
-  const agentMap = Object.fromEntries(catalog.agents.map(a => [a.name, a]));
+  const skillMap   = Object.fromEntries(catalog.skills.map(s => [s.name, s]));
+  const agentMap   = Object.fromEntries(catalog.agents.map(a => [a.name, a]));
+  const commandMap = Object.fromEntries(catalog.commands.map(c => [c.name, c]));
 
   const results = { installed: [], removed: [], skipped: [] };
 
-  const wantSkills = new Set(plan.skills || []);
-  const wantAgents = new Set(plan.agents || []);
+  const wantSkills   = new Set(plan.skills   || []);
+  const wantAgents   = new Set(plan.agents   || []);
+  const wantCommands = new Set(plan.commands || []);
 
   // Skills: install wanted; remove any symlinks in .claude/skills that aren't wanted
   for (const name of wantSkills) {
@@ -284,6 +321,25 @@ function applyInstall(projectPath, plan) {
     if (!wantAgents.has(name)) {
       removeAt(path.join(claudeDir, 'agents', file));
       results.removed.push(`agent:${name}`);
+    }
+  }
+
+  // Commands
+  for (const name of wantCommands) {
+    const entry = commandMap[name];
+    if (!entry) { results.skipped.push(`command:/${name} (not in catalog)`); continue; }
+    const dst = path.join(claudeDir, 'commands', `${name}.md`);
+    removeAt(dst);
+    fs.symlinkSync(entry.source, dst);
+    results.installed.push(`command:/${name}`);
+  }
+  let existingCommands = [];
+  try { existingCommands = fs.readdirSync(path.join(claudeDir, 'commands')).filter(f => f.endsWith('.md')); } catch {}
+  for (const file of existingCommands) {
+    const name = file.replace(/\.md$/, '');
+    if (!wantCommands.has(name)) {
+      removeAt(path.join(claudeDir, 'commands', file));
+      results.removed.push(`command:/${name}`);
     }
   }
 

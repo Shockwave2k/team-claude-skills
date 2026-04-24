@@ -2,5 +2,15 @@
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
   },
-  "autoMemoryEnabled": true
+  "autoMemoryEnabled": true,
+  "permissions": {
+    "allow": [
+      "Write(./.claude/CLAUDE.md)",
+      "Edit(./.claude/CLAUDE.md)",
+      "Write(./.claude/rules/**)",
+      "Edit(./.claude/rules/**)",
+      "Write(./.claude/features/**)",
+      "Edit(./.claude/features/**)"
+    ]
+  }
 }

@@ -1,6 +1,6 @@
 ---
 name: api-spec-generator
-description: Detects new APIs or code changes in backend services and automatically generates or updates OpenAPI 3.0+ specifications and Bruno API collections. Supports tRPC, REST APIs, GraphQL, and multiple frameworks (Fastify, Express, Gin, FastAPI).
+description: Use this skill after adding, changing, or removing backend API surface — tRPC procedures, Fastify/Express REST routes, GraphQL resolvers — to regenerate or update OpenAPI 3.0+ specs and Bruno (.bru) collections so API docs stay in sync with code. Trigger on phrases like "update the API spec", "regenerate the OpenAPI", "generate Bruno collections", "sync the API docs", "document this endpoint", "export the API", or whenever `/feature` Phase 3 runs on a feature that added or changed backend API surface. Also trigger when the user asks to bootstrap API documentation for an existing service that doesn't have an `openapi.yaml` yet. Supports tRPC, REST, GraphQL across Fastify, Express, Gin, FastAPI.
 version: 1.0.0
 author: Mai (Neolink Team)
 tags:

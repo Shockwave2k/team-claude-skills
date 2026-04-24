@@ -1,6 +1,6 @@
 ---
 name: neolink-gateway-setup
-description: Adds production-ready observability to API gateway services - structured logging with request body capture, Prometheus metrics, request tracing, and enhanced error handling. Works with Node.js (Fastify/Express), Go (Gin/Chi), and Python (FastAPI/Flask).
+description: Use this skill when the user wants to add or upgrade observability on an API gateway or backend service — structured logging (with request-body capture), Prometheus metrics, request tracing, enhanced error handling. Trigger on phrases like "add logging to the gateway", "set up Prometheus metrics", "add request tracing", "bootstrap a new gateway service", "add observability", "instrument this service", "wire up metrics", or when starting a brand-new gateway-service / backend-service that needs the standard Neolink telemetry stack. Works for Node.js (Fastify/Express), Go (Gin/Chi), and Python (FastAPI/Flask).
 version: 1.0.0
 author: Mai (Neolink Team)
 tags:
